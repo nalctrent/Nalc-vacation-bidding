@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 
 const INITIAL_CARRIERS = [
-  { id: '1', name: 'Trenton Bauer', category: 3, pin: '1234', round1Choice: [], round2Choice: [], completed: false },
-  { id: '2', name: 'Jessica', category: 2, pin: '5678', round1Choice: [], round2Choice: [], completed: false },
-  { id: '3', name: 'John Doe', category: 1, pin: '0000', round1Choice: [], round2Choice: [], completed: false },
-  { id: '4', name: 'Jane Smith', category: 3, pin: '9999', round1Choice: [], round2Choice: [], completed: false },
+  { id: '1', name: 'Trenton Bauer', category: 3, pin: '1234', phone: '4173964312', contact: '4173964312@tmomail.net', round1Choice: [], round2Choice: [], completed: false },
+  { id: '2', name: 'Jessica', category: 2, pin: '5678', phone: '4173565260', contact: '4173565260@txt.att.net', round1Choice: [], round2Choice: [], completed: false },
+  { id: '3', name: 'John Doe', category: 1, pin: '0000', phone: '', contact: '', round1Choice: [], round2Choice: [], completed: false },
+  { id: '4', name: 'Jane Smith', category: 3, pin: '9999', phone: '', contact: '', round1Choice: [], round2Choice: [], completed: false },
 ];
 
 const generateYearWeeks = () => {
@@ -43,12 +43,16 @@ export default function App() {
   const [newCarrierName, setNewCarrierName] = useState('');
   const [newCarrierCategory, setNewCarrierCategory] = useState(1);
   const [newCarrierPin, setNewCarrierPin] = useState('');
+  const [newCarrierPhone, setNewCarrierPhone] = useState('');
+  const [newCarrierContact, setNewCarrierContact] = useState('');
 
   // Security & Authentication
   const [enteredPin, setEnteredPin] = useState('');
   const [isPinAuthenticated, setIsPinAuthenticated] = useState(false);
+  const [stewardPinInput, setStewardPinInput] = useState('');
+  const [isStewardUnlocked, setIsStewardUnlocked] = useState(false);
 
-  // System Settings
+  // View States
   const [totalEmployees, setTotalEmployees] = useState(30);
   const [customSlots, setCustomSlots] = useState({});
   const [isAdminOpen, setIsAdminOpen] = useState(false);
@@ -101,6 +105,7 @@ export default function App() {
           selectedWeeks: weeks,
           nextCarrierName: nextCarrier ? nextCarrier.name : 'End of Round',
           nextCarrierLink: nextCarrierLink,
+          nextCarrierContact: nextCarrier ? nextCarrier.contact : '',
         }),
       });
     } catch (err) {
@@ -108,7 +113,16 @@ export default function App() {
     }
   };
 
-  // Add Carrier Functionality
+  const handleUnlockSteward = () => {
+    if (stewardPinInput === '1234' || stewardPinInput === '5678') {
+      setIsStewardUnlocked(true);
+      setIsStewardView(true);
+      setStewardPinInput('');
+    } else {
+      alert('Unauthorized access. Invalid Officer PIN.');
+    }
+  };
+
   const handleAddCarrier = (e) => {
     e.preventDefault();
     if (!newCarrierName.trim() || newCarrierPin.length !== 4) {
@@ -121,6 +135,8 @@ export default function App() {
       name: newCarrierName.trim(),
       category: Number(newCarrierCategory),
       pin: newCarrierPin.trim(),
+      phone: newCarrierPhone.trim(),
+      contact: newCarrierContact.trim(),
       round1Choice: [],
       round2Choice: [],
       completed: false,
@@ -129,11 +145,13 @@ export default function App() {
     setCarriers([...carriers, newCarrier]);
     setNewCarrierName('');
     setNewCarrierPin('');
+    setNewCarrierPhone('');
+    setNewCarrierContact('');
     alert(`Added ${newCarrier.name} to the roster!`);
   };
 
   const handleRemoveCarrier = (id) => {
-    if (confirm('Are you sure you want to remove this carrier from the roster?')) {
+    if (confirm('Are you sure you want to remove this carrier?')) {
       setCarriers(carriers.filter(c => c.id !== id));
     }
   };
@@ -217,11 +235,23 @@ export default function App() {
     }
   };
 
+  const textCarrierDirectly = (carrier) => {
+    const link = generateCarrierLink(carrier.id);
+    const msg = encodeURIComponent(
+      `Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! Submit your vacation picks here: ${link}`
+    );
+    window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
+  };
+
   const copyIndividualLink = (carrier) => {
     const link = generateCarrierLink(carrier.id);
     const msg = `Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! Submit your vacation picks here: ${link}`;
     navigator.clipboard.writeText(msg);
     alert(`Personalized link copied for ${carrier.name}!`);
+  };
+
+  const handlePrintMasterList = () => {
+    window.print();
   };
 
   return (
@@ -233,30 +263,53 @@ export default function App() {
         </p>
       </header>
 
-      {/* Navigation Bar */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
-        <button 
-          onClick={() => setIsStewardView(!isStewardView)} 
-          style={{ background: '#003366', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-        >
-          {isStewardView ? '📋 Return to Bidding Portal' : '🛡️ Steward & Officer View'}
-        </button>
-        <button 
-          onClick={() => setIsAdminOpen(!isAdminOpen)} 
-          style={{ background: '#555', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '4px', cursor: 'pointer' }}
-        >
-          {isAdminOpen ? 'Close Roster & Slot Admin' : '⚙️ Manage Roster & Weekly Slots'}
-        </button>
+      {/* Footer Navigation Bar for Officer Controls */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', justifyContent: 'flex-end' }}>
+        {!isStewardUnlocked ? (
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input 
+              type="password" 
+              maxLength={4} 
+              placeholder="Officer PIN" 
+              value={stewardPinInput}
+              onChange={(e) => setStewardPinInput(e.target.value)}
+              style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', width: '90px', fontSize: '12px' }}
+            />
+            <button 
+              onClick={handleUnlockSteward}
+              style={{ background: '#333', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+            >
+              🔒 Steward Access
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button 
+              onClick={() => setIsStewardView(!isStewardView)} 
+              style={{ background: '#003366', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              {isStewardView ? '📋 Back to Bidding' : '🛡️ Steward Board'}
+            </button>
+            <button 
+              onClick={() => setIsAdminOpen(!isAdminOpen)} 
+              style={{ background: '#555', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer' }}
+            >
+              {isAdminOpen ? 'Close Roster Admin' : '⚙️ Roster Settings'}
+            </button>
+            <button 
+              onClick={handlePrintMasterList} 
+              style={{ background: '#17a2b8', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              🖨️ Print Master List
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Steward Master View */}
-      {isStewardView ? (
+      {isStewardUnlocked && isStewardView ? (
         <div style={{ background: '#eef2f7', padding: '20px', borderRadius: '8px', border: '1px solid #b0c4de', marginBottom: '20px' }}>
           <h2 style={{ margin: '0 0 10px 0', color: '#003366' }}>🛡️ Steward & Officer Master Board</h2>
-          <p style={{ fontSize: '13px', color: '#333', marginBottom: '16px' }}>
-            Generates individual turn links for carriers and manages overall seniority progress.
-          </p>
-
           <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: '6px', overflow: 'hidden' }}>
             <thead>
               <tr style={{ background: '#003366', color: '#fff', textAlign: 'left', fontSize: '13px' }}>
@@ -265,7 +318,7 @@ export default function App() {
                 <th style={{ padding: '10px' }}>PIN</th>
                 <th style={{ padding: '10px' }}>Round 1</th>
                 <th style={{ padding: '10px' }}>Round 2</th>
-                <th style={{ padding: '10px' }}>Action</th>
+                <th style={{ padding: '10px' }}>Dispatch Options</th>
               </tr>
             </thead>
             <tbody>
@@ -280,12 +333,18 @@ export default function App() {
                     <td style={{ padding: '10px', fontFamily: 'monospace' }}>{c.pin}</td>
                     <td style={{ padding: '10px' }}>{c.round1Choice.length > 0 ? c.round1Choice.join(', ') : <span style={{ color: '#888' }}>Pending</span>}</td>
                     <td style={{ padding: '10px' }}>{c.round2Choice.length > 0 ? c.round2Choice.join(', ') : <span style={{ color: '#888' }}>Pending</span>}</td>
-                    <td style={{ padding: '10px' }}>
+                    <td style={{ padding: '10px', display: 'flex', gap: '6px' }}>
+                      <button
+                        onClick={() => textCarrierDirectly(c)}
+                        style={{ background: '#28a745', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                      >
+                        💬 Text Link
+                      </button>
                       <button
                         onClick={() => copyIndividualLink(c)}
                         style={{ background: '#0275d8', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
                       >
-                        🔗 Copy Personal Link
+                        🔗 Copy
                       </button>
                     </td>
                   </tr>
@@ -296,23 +355,10 @@ export default function App() {
         </div>
       ) : null}
 
-      {/* Admin Section (Add Carriers & Change Categories) */}
-      {isAdminOpen && (
+      {/* Admin Section */}
+      {isStewardUnlocked && isAdminOpen && (
         <div style={{ background: '#f4f4f4', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ccc' }}>
           <h3>Staffing & Roster Admin</h3>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
-              Total Craft Employees (Base for 11% / 14% Prime calculation):
-              <input 
-                type="number" 
-                value={totalEmployees} 
-                onChange={(e) => setTotalEmployees(Number(e.target.value))} 
-                style={{ marginLeft: '8px', padding: '4px', width: '60px' }}
-              />
-            </label>
-          </div>
-
-          <h4>➕ Add New Carrier to Roster</h4>
           <form onSubmit={handleAddCarrier} style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
             <input 
               type="text" 
@@ -336,19 +382,33 @@ export default function App() {
               maxLength={4}
               value={newCarrierPin} 
               onChange={(e) => setNewCarrierPin(e.target.value)}
-              style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', width: '90px' }}
+              style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', width: '80px' }}
+            />
+            <input 
+              type="tel" 
+              placeholder="Cell Phone #" 
+              value={newCarrierPhone} 
+              onChange={(e) => setNewCarrierPhone(e.target.value)}
+              style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', width: '120px' }}
+            />
+            <input 
+              type="text" 
+              placeholder="SMS Gateway / Email (Optional)" 
+              value={newCarrierContact} 
+              onChange={(e) => setNewCarrierContact(e.target.value)}
+              style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', flex: 1 }}
             />
             <button type="submit" style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
               Add Carrier
             </button>
           </form>
 
-          <h4>Existing Carrier Roster & Categories</h4>
+          <h4>Existing Carrier Roster</h4>
           <ul>
             {carriers.map((c, idx) => (
               <li key={c.id} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <strong style={{ minWidth: '120px' }}>{c.name}</strong>
-                <span>Category:</span>
+                <span>Cat:</span>
                 <select 
                   value={c.category} 
                   onChange={(e) => {
@@ -357,9 +417,9 @@ export default function App() {
                     setCarriers(copy);
                   }}
                 >
-                  <option value={1}>Category 1 (10 Days Max)</option>
-                  <option value={2}>Category 2 (15 Days Max)</option>
-                  <option value={3}>Category 3 (15 Days Max)</option>
+                  <option value={1}>Cat 1</option>
+                  <option value={2}>Cat 2</option>
+                  <option value={3}>Cat 3</option>
                 </select>
                 <span>PIN: <code>{c.pin}</code></span>
                 <button 
@@ -374,16 +434,16 @@ export default function App() {
         </div>
       )}
 
-      {/* Bidding View with PIN Verification */}
-      {!isStewardView && currentCarrier && (
+      {/* Bidding View */}
+      {(!isStewardView || !isStewardUnlocked) && currentCarrier && (
         <div>
           {!isTurnForUrlUser ? (
             <div style={{ background: '#f8d7da', color: '#721c24', padding: '14px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #f5c6cb' }}>
-              <strong>⚠️ Turn Lock Active:</strong> It is currently <strong>{currentCarrier.name}'s</strong> turn to bid. Please wait for your official link.
+              <strong>⚠️ Turn Lock Active:</strong> It is currently <strong>{currentCarrier.name}'s</strong> turn to bid. Please wait for your personal bidding link.
             </div>
           ) : !isPinAuthenticated ? (
             <div style={{ background: '#fff3cd', color: '#856404', padding: '16px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #ffeeba' }}>
-              <h3 style={{ margin: '0 0 8px 0' }}>🔒 Security Verification</h3>
+              <h3 style={{ margin: '0 0 8px 0' }}>🔒 Carrier Identity Verification</h3>
               <p style={{ margin: '0 0 12px 0', fontSize: '14px' }}>
                 Hello <strong>{currentCarrier.name}</strong>! Enter your 4-digit PIN to unlock bidding for Round {currentRound}:
               </p>
@@ -400,7 +460,7 @@ export default function App() {
                   onClick={handleVerifyPin}
                   style={{ background: '#003366', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
-                  Unlock Selections
+                  Unlock Bidding
                 </button>
               </div>
             </div>
