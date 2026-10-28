@@ -22,7 +22,12 @@ import {
   Copy,
   Pause,
   Play,
-  RotateCcw
+  RotateCcw,
+  UserPlus,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
+  Edit2
 } from "lucide-react";
 
 // Initial Station LMOU Defaults
@@ -32,7 +37,7 @@ const DEFAULT_LMOU = {
   choicePeriodStart: "2027-05-17",
   choicePeriodEnd: "2027-10-10",
   round1MaxDays: 15,
-  clockStartTrigger: "on_open", // "on_send" or "on_open"
+  clockStartTrigger: "on_open",
 };
 
 // Default Seniority Roster
@@ -114,7 +119,6 @@ const DEFAULT_ROSTER = [
   },
 ];
 
-// Generate Choice Weeks Array (20 Weeks)
 const generateWeeks = () => {
   const weeks = [];
   let startDate = new Date("2027-05-17");
@@ -142,18 +146,17 @@ export default function NalcVacationApp() {
   const [lmou, setLmou] = useState(DEFAULT_LMOU);
   const [roster, setRoster] = useState(DEFAULT_ROSTER);
   const [weeks] = useState(generateWeeks());
-  const [activeTab, setActiveTab] = useState("bidding"); // bidding, steward, roster, lmou, ps3971, audit
+  const [activeTab, setActiveTab] = useState("bidding");
   const [auditLogs, setAuditLogs] = useState([
     { timestamp: "2027-01-10 08:00:00", text: "Round 1 Bidding Opened by Shop Steward." },
     { timestamp: "2027-01-10 08:00:01", text: "SMS Notice sent to J. Miller (Rank #1)." },
-    { timestamp: "2027-01-10 08:15:10", text: "J. Miller opened personalized link (Token: tok_jm11)." },
+    { timestamp: "2027-01-10 08:15:10", text: "J. Miller opened personalized link." },
     { timestamp: "2027-01-10 09:30:45", text: "J. Miller submitted picks: Week 3, Week 4, Week 5." },
     { timestamp: "2027-01-10 09:31:00", text: "SMS Notice sent to R. Davis (Rank #2)." },
     { timestamp: "2027-01-10 11:10:12", text: "R. Davis submitted picks: Week 8, Week 9." },
     { timestamp: "2027-01-10 11:15:00", text: "Turn advanced to T. Bauer (Rank #3). SMS Notice sent." },
   ]);
 
-  // Active Carrier Session state (Simulating personalized token access)
   const [selectedCarrierId, setSelectedCarrierId] = useState("3");
   const [enteredPin, setEnteredPin] = useState("");
   const [isPinAuthenticated, setIsPinAuthenticated] = useState(false);
@@ -161,42 +164,49 @@ export default function NalcVacationApp() {
   const [pinError, setPinError] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
 
+  // New Carrier Form Modal State
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newCarrier, setNewCarrier] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    pin: "1234",
+    accrualTier: 13,
+  });
+
   const activeCarrier = useMemo(
-    () => roster.find((c) => c.id === selectedCarrierId) || roster[0],
+    () => roster.find((c) => c.id === selectedCarrierId) || roster[0] || {},
     [roster, selectedCarrierId]
   );
 
   const currentTurnCarrier = useMemo(
-    () => roster.find((c) => c.status === "In Turn") || roster[0],
+    () => roster.find((c) => c.status === "In Turn") || roster[0] || {},
     [roster]
   );
 
-  // Calculate claimed counts per week
   const weekClaimCounts = useMemo(() => {
     const counts = {};
     weeks.forEach((w) => (counts[w.id] = 0));
     roster.forEach((c) => {
-      c.round1Selections.forEach((wId) => {
+      (c.round1Selections || []).forEach((wId) => {
         if (counts[wId] !== undefined) counts[wId]++;
       });
     });
     return counts;
   }, [roster, weeks]);
 
-  // Handle Token / Link simulation when switching selected carrier
   useEffect(() => {
     setIsPinAuthenticated(false);
     setEnteredPin("");
     setPinError("");
     setTempSelectedWeeks(activeCarrier.round1Selections || []);
 
-    // Simulate clicking unique token link: Record "Link Opened" timestamp if not already set
     if (activeCarrier.status === "In Turn" && !activeCarrier.linkOpenedAt) {
       const now = new Date().toISOString();
       setRoster((prev) =>
         prev.map((c) => (c.id === activeCarrier.id ? { ...c, linkOpenedAt: now } : c))
       );
-      addAuditLog(`Carrier ${activeCarrier.name} opened personalized link (Token: ${activeCarrier.token}). 24-Hr Clock Active.`);
+      addAuditLog(`Carrier ${activeCarrier.name} opened personalized link. 24-Hr Clock Active.`);
     }
   }, [selectedCarrierId]);
 
@@ -222,13 +232,11 @@ export default function NalcVacationApp() {
     if (tempSelectedWeeks.includes(weekId)) {
       setTempSelectedWeeks(tempSelectedWeeks.filter((id) => id !== weekId));
     } else {
-      // Enforce max days/weeks based on accrual
       const maxAllowedWeeks = activeCarrier.accrualTier === 13 ? 2 : 3;
       if (tempSelectedWeeks.length >= maxAllowedWeeks) {
         alert(`Your accrual tier (${activeCarrier.accrualTier} days/yr) allows a maximum of ${maxAllowedWeeks} weeks (${maxAllowedWeeks * 5} days) in Round 1.`);
         return;
       }
-      // Enforce LMOU Cap per week
       if ((weekClaimCounts[weekId] || 0) >= lmou.maxCarriersPerWeek) {
         alert(`Week ${weekId} has reached the maximum LMOU cap of ${lmou.maxCarriersPerWeek} carriers off.`);
         return;
@@ -255,7 +263,6 @@ export default function NalcVacationApp() {
       return c;
     });
 
-    // Find next carrier in seniority line
     const currentIdx = roster.findIndex((c) => c.id === activeCarrier.id);
     let nextIdx = currentIdx + 1;
     while (nextIdx < roster.length && updatedRoster[nextIdx].status === "Completed") {
@@ -278,18 +285,65 @@ export default function NalcVacationApp() {
     setIsPinAuthenticated(false);
   };
 
-  const handleManualBypass = (carrierId) => {
-    const updated = roster.map((c) =>
-      c.id === carrierId ? { ...c, status: "Bypassed" } : c
-    );
-    // Find next waiting
-    const next = updated.find((c) => c.status === "Waiting");
-    if (next) {
-      next.status = "In Turn";
-      next.noticeSentAt = new Date().toISOString();
-      addAuditLog(`Shop Steward manually bypassed Carrier ID #${carrierId}. Turn advanced to ${next.name}.`);
-    }
-    setRoster(updated);
+  // ROSTER MANAGEMENT FUNCTIONS
+  const handleAddCarrierSubmit = (e) => {
+    e.preventDefault();
+    if (!newCarrier.name) return;
+
+    const newId = (Date.now() % 100000).toString();
+    const nextRank = roster.length + 1;
+    const createdCarrier = {
+      ...newCarrier,
+      id: newId,
+      seniorityRank: nextRank,
+      status: "Waiting",
+      token: `tok_${newId}`,
+      round1Selections: [],
+      noticeSentAt: null,
+      linkOpenedAt: null,
+      bidSubmittedAt: null,
+    };
+
+    setRoster([...roster, createdCarrier]);
+    addAuditLog(`New Carrier Added: ${createdCarrier.name} at Seniority Rank #${nextRank}`);
+    setShowAddModal(false);
+    setNewCarrier({ name: "", phone: "", email: "", pin: "1234", accrualTier: 13 });
+  };
+
+  const handleDeleteCarrier = (carrierId, name) => {
+    if (!confirm(`Are you sure you want to remove ${name}? Seniority ranks for carriers below will automatically bump up.`)) return;
+
+    const filtered = roster.filter((c) => c.id !== carrierId);
+    // Auto re-rank remaining carriers sequentially
+    const reRanked = filtered.map((c, index) => ({
+      ...c,
+      seniorityRank: index + 1,
+    }));
+
+    setRoster(reRanked);
+    addAuditLog(`Carrier Removed: ${name}. All subsequent seniority ranks automatically bumped up.`);
+  };
+
+  const handleMoveCarrier = (index, direction) => {
+    if (
+      (direction === "up" && index === 0) ||
+      (direction === "down" && index === roster.length - 1)
+    ) return;
+
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    const updated = [...roster];
+    const temp = updated[index];
+    updated[index] = updated[targetIndex];
+    updated[targetIndex] = temp;
+
+    // Recalculate ranks sequentially
+    const reRanked = updated.map((c, idx) => ({
+      ...c,
+      seniorityRank: idx + 1,
+    }));
+
+    setRoster(reRanked);
+    addAuditLog(`Seniority standings manually adjusted for ${temp.name}.`);
   };
 
   const generateSmsLink = (carrier) => {
@@ -326,7 +380,6 @@ export default function NalcVacationApp() {
             </div>
           </div>
 
-          {/* Quick Carrier Switcher Simulation */}
           <div className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700">
             <Eye className="w-4 h-4 text-blue-400" />
             <span className="text-xs text-slate-400">Simulate Carrier:</span>
@@ -374,7 +427,7 @@ export default function NalcVacationApp() {
                 : "text-slate-400 hover:text-white"
             }`}
           >
-            <Users className="w-4 h-4" /> Seniority Roster
+            <Users className="w-4 h-4" /> Manage Roster
           </button>
           <button
             onClick={() => setActiveTab("lmou")}
@@ -409,7 +462,7 @@ export default function NalcVacationApp() {
         </div>
       </header>
 
-      {/* Main Content Area */}
+      {/* Main Area */}
       <main className="max-w-7xl mx-auto px-4 py-6">
         {copyStatus && (
           <div className="mb-4 bg-emerald-900/80 border border-emerald-500 text-emerald-200 px-4 py-2 rounded-lg text-sm flex items-center gap-2 animate-bounce">
@@ -420,7 +473,6 @@ export default function NalcVacationApp() {
         {/* TAB 1: BIDDING PORTAL */}
         {activeTab === "bidding" && (
           <div className="space-y-6">
-            {/* Active Turn Status Banner */}
             <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-xs font-semibold text-blue-400 uppercase tracking-wider">
@@ -443,7 +495,6 @@ export default function NalcVacationApp() {
               </div>
             </div>
 
-            {/* Carrier Portal Access Box */}
             <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-6">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-700 pb-4 mb-4">
                 <div>
@@ -457,11 +508,10 @@ export default function NalcVacationApp() {
                     Welcome, {activeCarrier.name} (Seniority Rank #{activeCarrier.seniorityRank})
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Accrual Tier: <strong className="text-slate-200">{activeCarrier.accrualTier} Days/Yr</strong> • Allowed Round 1 Choice: <strong className="text-emerald-400">{activeCarrier.accrualTier === 13 ? "Up to 10 Days (2 Weeks)" : "Up to 15 Days (3 Weeks)"}</strong>
+                    Accrual Tier: <strong className="text-slate-200">{activeCarrier.accrualTier} Days/Yr</strong> • Allowed Choice: <strong className="text-emerald-400">{activeCarrier.accrualTier === 13 ? "Up to 10 Days (2 Weeks)" : "Up to 15 Days (3 Weeks)"}</strong>
                   </p>
                 </div>
 
-                {/* Status Badge */}
                 <div>
                   {activeCarrier.status === "In Turn" && (
                     <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
@@ -475,7 +525,7 @@ export default function NalcVacationApp() {
                   )}
                   {activeCarrier.status === "Waiting" && (
                     <span className="bg-slate-700 text-slate-300 px-3 py-1 rounded-full text-xs font-bold">
-                      Waiting in Seniority Queue
+                      Waiting in Queue
                     </span>
                   )}
                   {activeCarrier.status === "Bypassed" && (
@@ -486,7 +536,6 @@ export default function NalcVacationApp() {
                 </div>
               </div>
 
-              {/* Security PIN Authentication */}
               {!isPinAuthenticated ? (
                 <div className="bg-slate-900/80 border border-slate-700 rounded-lg p-5 max-w-md mx-auto my-4 text-center space-y-3">
                   <Lock className="w-8 h-8 text-blue-400 mx-auto" />
@@ -529,7 +578,6 @@ export default function NalcVacationApp() {
                     </button>
                   </div>
 
-                  {/* Interactive Calendar Selection Grid */}
                   <div>
                     <h4 className="text-sm font-bold text-slate-200 mb-2">
                       Select Choice Vacation Weeks (LMOU Cap: Max {lmou.maxCarriersPerWeek} Carriers/Week)
@@ -579,7 +627,6 @@ export default function NalcVacationApp() {
                     </div>
                   </div>
 
-                  {/* Submit Bid Action Bar */}
                   {(activeCarrier.status === "In Turn" || activeCarrier.status === "Bypassed") && (
                     <div className="bg-slate-900 p-4 rounded-xl border border-slate-700 flex flex-col sm:flex-row justify-between items-center gap-3 mt-4">
                       <div>
@@ -612,7 +659,7 @@ export default function NalcVacationApp() {
                 <ShieldAlert className="w-5 h-5 text-blue-400" /> Shop Steward Command Console
               </h2>
               <p className="text-xs text-slate-400 mb-4">
-                Manage turn timers, trigger automated SMS/Email notifications, override missed windows, and enforce LMOU compliance.
+                Trigger texts, monitor active turns, or bypass missed windows.
               </p>
 
               <div className="overflow-x-auto">
@@ -660,7 +707,7 @@ export default function NalcVacationApp() {
                           )}
                         </td>
                         <td className="p-3 text-slate-300 font-mono">
-                          {c.round1Selections.length > 0 ? c.round1Selections.join(", ") : "-"}
+                          {(c.round1Selections || []).length > 0 ? c.round1Selections.join(", ") : "-"}
                         </td>
                         <td className="p-3 text-right space-x-1">
                           <a
@@ -675,14 +722,6 @@ export default function NalcVacationApp() {
                           >
                             <Copy className="w-3 h-3" /> Link
                           </button>
-                          {c.status === "In Turn" && (
-                            <button
-                              onClick={() => handleManualBypass(c.id)}
-                              className="inline-flex items-center gap-1 bg-amber-600 hover:bg-amber-500 text-white px-2 py-1 rounded text-[11px] font-bold transition"
-                            >
-                              <Pause className="w-3 h-3" /> Bypass
-                            </button>
-                          )}
                         </td>
                       </tr>
                     ))}
@@ -693,186 +732,167 @@ export default function NalcVacationApp() {
           </div>
         )}
 
-        {/* TAB 3: SENIORITY ROSTER */}
+        {/* TAB 3: MANAGE ROSTER (NEW IN-APP EDITOR) */}
         {activeTab === "roster" && (
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-4">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <div>
-                <h2 className="text-lg font-bold text-white">Office Seniority Roster</h2>
-                <p className="text-xs text-slate-400">City Letter Carriers, PTFs, and CCAs in order of relative standing.</p>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Users className="w-5 h-5 text-blue-400" /> Station Seniority Roster Manager
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Add new hires, manage retirements, and re-order seniority standing dynamically.
+                </p>
               </div>
               <button
-                onClick={() => alert("Add Carrier modal can be configured here.")}
-                className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold"
+                onClick={() => setShowAddModal(true)}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1 shadow"
               >
-                + Add Carrier
+                <UserPlus className="w-4 h-4" /> + Add New Carrier
               </button>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-900 text-slate-400 uppercase font-bold border-b border-slate-700">
                     <th className="p-3">Rank</th>
-                    <th className="p-3">Name</th>
+                    <th className="p-3">Carrier Name</th>
                     <th className="p-3">Phone</th>
-                    <th className="p-3">Accrual Category</th>
-                    <th className="p-3">Round 1 Max</th>
-                    <th className="p-3">Security PIN</th>
+                    <th className="p-3">Accrual Tier</th>
+                    <th className="p-3">PIN</th>
+                    <th className="p-3 text-center">Move Rank</th>
+                    <th className="p-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/50">
-                  {roster.map((c) => (
+                  {roster.map((c, index) => (
                     <tr key={c.id} className="hover:bg-slate-700/30">
                       <td className="p-3 font-bold text-slate-300">#{c.seniorityRank}</td>
                       <td className="p-3 font-bold text-white">{c.name}</td>
                       <td className="p-3 text-slate-400">{c.phone}</td>
                       <td className="p-3 text-slate-300">{c.accrualTier} Days/Year</td>
-                      <td className="p-3 font-semibold text-emerald-400">
-                        {c.accrualTier === 13 ? "10 Days (2 Wks)" : "15 Days (3 Wks)"}
-                      </td>
                       <td className="p-3 font-mono text-slate-400">{c.pin}</td>
+                      <td className="p-3 text-center space-x-1">
+                        <button
+                          disabled={index === 0}
+                          onClick={() => handleMoveCarrier(index, "up")}
+                          className="p-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-30 rounded text-slate-300"
+                          title="Move Up in Seniority"
+                        >
+                          <ArrowUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          disabled={index === roster.length - 1}
+                          onClick={() => handleMoveCarrier(index, "down")}
+                          className="p-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-30 rounded text-slate-300"
+                          title="Move Down in Seniority"
+                        >
+                          <ArrowDown className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                      <td className="p-3 text-right">
+                        <button
+                          onClick={() => handleDeleteCarrier(c.id, c.name)}
+                          className="bg-rose-900/60 hover:bg-rose-600 text-rose-200 hover:text-white px-2.5 py-1 rounded text-[11px] font-bold transition flex items-center gap-1 ml-auto"
+                        >
+                          <Trash2 className="w-3 h-3" /> Retire / Delete
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+
+            {/* ADD CARRIER MODAL POPUP */}
+            {showAddModal && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+                  <div className="flex justify-between items-center border-b border-slate-700 pb-3">
+                    <h3 className="text-md font-bold text-white flex items-center gap-2">
+                      <UserPlus className="w-5 h-5 text-emerald-400" /> Add New Carrier / PTF / CCA
+                    </h3>
+                    <button
+                      onClick={() => setShowAddModal(false)}
+                      className="text-slate-400 hover:text-white font-bold text-sm"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleAddCarrierSubmit} className="space-y-3 text-xs">
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">Full Name</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. A. Lincoln"
+                        value={newCarrier.name}
+                        onChange={(e) => setNewCarrier({ ...newCarrier, name: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2.5 text-white focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1">Cell Phone Number (for SMS)</label>
+                      <input
+                        type="tel"
+                        placeholder="e.g. 4175550199"
+                        value={newCarrier.phone}
+                        onChange={(e) => setNewCarrier({ ...newCarrier, phone: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded p-2.5 text-white focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-slate-300 font-bold mb-1">Accrual Category</label>
+                        <select
+                          value={newCarrier.accrualTier}
+                          onChange={(e) => setNewCarrier({ ...newCarrier, accrualTier: parseInt(e.target.value) })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded p-2.5 text-white focus:outline-none focus:border-blue-500"
+                        >
+                          <option value={13}>13 Days/Yr (2 Wks Round 1)</option>
+                          <option value={20}>20 Days/Yr (3 Wks Round 1)</option>
+                          <option value={26}>26 Days/Yr (3 Wks Round 1)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-300 font-bold mb-1">Default 4-Digit PIN</label>
+                        <input
+                          type="text"
+                          maxLength={4}
+                          value={newCarrier.pin}
+                          onChange={(e) => setNewCarrier({ ...newCarrier, pin: e.target.value })}
+                          className="w-full bg-slate-900 border border-slate-700 rounded p-2.5 text-white font-mono focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddModal(false)}
+                        className="w-1/2 bg-slate-700 hover:bg-slate-600 text-slate-200 py-2.5 rounded-lg font-bold"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="w-1/2 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-lg font-bold"
+                      >
+                        Save Carrier
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* TAB 4: LMOU RULES */}
         {activeTab === "lmou" && (
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 max-w-2xl mx-auto space-y-4">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Settings className="w-5 h-5 text-blue-400" /> Station LMOU Parameters
-            </h2>
-            <div className="space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">
-                  LMOU Item 9 Cap: Max Carriers Off Per Week
-                </label>
-                <input
-                  type="number"
-                  value={lmou.maxCarriersPerWeek}
-                  onChange={(e) => setLmou({ ...lmou, maxCarriersPerWeek: parseInt(e.target.value) || 1 })}
-                  className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white w-full text-sm font-semibold"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">
-                  Selection Time Limit Per Carrier (Hours)
-                </label>
-                <input
-                  type="number"
-                  value={lmou.turnTimerHours}
-                  onChange={(e) => setLmou({ ...lmou, turnTimerHours: parseInt(e.target.value) || 24 })}
-                  className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white w-full text-sm font-semibold"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">
-                  24-Hour Clock Start Trigger
-                </label>
-                <select
-                  value={lmou.clockStartTrigger}
-                  onChange={(e) => setLmou({ ...lmou, clockStartTrigger: e.target.value })}
-                  className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white w-full text-sm font-semibold"
-                >
-                  <option value="on_open">Starts When Carrier Opens Personalized Link (Read Receipt)</option>
-                  <option value="on_send">Starts Immediately When SMS/Notice Is Sent</option>
-                </select>
-              </div>
-
-              <button
-                onClick={() => alert("LMOU Rules Saved Successfully!")}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-lg text-xs"
-              >
-                Save Local Rules
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 5: PS FORM 3971 SLIPS */}
-        {activeTab === "ps3971" && (
-          <div className="space-y-4">
-            <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 flex justify-between items-center">
-              <div>
-                <h2 className="text-lg font-bold text-white">PS Form 3971 Automated Generator</h2>
-                <p className="text-xs text-slate-400">Pre-filled official leave request slips ready for carrier signature and management submission.</p>
-              </div>
-              <button
-                onClick={() => window.print()}
-                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1"
-              >
-                <Printer className="w-4 h-4" /> Print All Slips
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {roster.filter((c) => c.round1Selections.length > 0).map((c) => (
-                <div key={c.id} className="bg-white text-slate-900 p-4 rounded-xl shadow border border-slate-300 space-y-2 text-xs">
-                  <div className="flex justify-between border-b border-slate-300 pb-2">
-                    <div>
-                      <h3 className="font-bold text-sm uppercase">PS Form 3971 - Prime Time Choice</h3>
-                      <p className="text-[10px] text-slate-600">US Postal Service Application for Leave</p>
-                    </div>
-                    <span className="font-mono text-xs font-bold bg-slate-100 px-2 py-1 rounded">Rank #{c.seniorityRank}</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <div>
-                      <span className="text-[10px] text-slate-500 uppercase block font-bold">Employee Name</span>
-                      <span className="font-bold">{c.name}</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 uppercase block font-bold">Type of Leave</span>
-                      <span className="font-bold">Annual Leave (Choice)</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="text-[10px] text-slate-500 uppercase block font-bold">Requested Vacation Weeks</span>
-                    <span className="font-mono font-bold text-blue-700">{c.round1Selections.join(", ")}</span>
-                  </div>
-
-                  <div className="border-t border-slate-200 pt-3 mt-2 flex justify-between items-end">
-                    <div>
-                      <div className="border-b border-slate-400 w-32 h-6"></div>
-                      <span className="text-[9px] text-slate-500 uppercase">Employee Signature</span>
-                    </div>
-                    <div>
-                      <div className="border-b border-slate-400 w-32 h-6"></div>
-                      <span className="text-[9px] text-slate-500 uppercase">Supervisor Signature</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 6: AUDIT LOG */}
-        {activeTab === "audit" && (
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-3">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Clock className="w-5 h-5 text-blue-400" /> Bidding Audit Trail
-            </h2>
-            <p className="text-xs text-slate-400">Timestamped record of all notifications, link opens, PIN verifications, and submitted picks.</p>
-
-            <div className="bg-slate-900 rounded-lg p-4 font-mono text-xs text-slate-300 space-y-2 max-h-96 overflow-y-auto border border-slate-700">
-              {auditLogs.map((log, idx) => (
-                <div key={idx} className="flex gap-3 border-b border-slate-800/80 pb-1.5">
-                  <span className="text-slate-500 shrink-0">[{log.timestamp}]</span>
-                  <span className="text-slate-200">{log.text}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
+      
