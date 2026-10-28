@@ -46,6 +46,12 @@ export default function App() {
   const [newCarrierPhone, setNewCarrierPhone] = useState('');
   const [newCarrierContact, setNewCarrierContact] = useState('');
 
+  // Manual Override & Event Block State
+  const [overrideCarrierId, setOverrideCarrierId] = useState('');
+  const [overrideRound, setOverrideRound] = useState(1);
+  const [overrideWeeksInput, setOverrideWeeksInput] = useState('');
+  const [blockedEventSlots, setBlockedEventSlots] = useState({}); // { weekNum: blockedCount }
+
   // Security & Authentication
   const [enteredPin, setEnteredPin] = useState('');
   const [isPinAuthenticated, setIsPinAuthenticated] = useState(false);
@@ -81,11 +87,13 @@ export default function App() {
   };
 
   const getBookedCount = (weekNum) => {
-    return carriers.reduce((count, c) => {
+    const carrierBooked = carriers.reduce((count, c) => {
       const r1 = c.round1Choice.includes(weekNum) ? 1 : 0;
       const r2 = c.round2Choice.includes(weekNum) ? 1 : 0;
       return count + r1 + r2;
     }, 0);
+    const blocked = blockedEventSlots[weekNum] || 0;
+    return carrierBooked + blocked;
   };
 
   const generateCarrierLink = (carrierId) => {
@@ -154,6 +162,38 @@ export default function App() {
     if (confirm('Are you sure you want to remove this carrier?')) {
       setCarriers(carriers.filter(c => c.id !== id));
     }
+  };
+
+  const handleManualOverrideSubmit = (e) => {
+    e.preventDefault();
+    if (!overrideCarrierId || !overrideWeeksInput.trim()) {
+      alert('Please select a carrier and enter week numbers (e.g. 5, 6, 7).');
+      return;
+    }
+
+    const weeksArray = overrideWeeksInput
+      .split(',')
+      .map((w) => Number(w.trim()))
+      .filter((w) => !isNaN(w) && w >= 1 && w <= 52);
+
+    if (weeksArray.length === 0) {
+      alert('Please enter valid week numbers between 1 and 52.');
+      return;
+    }
+
+    setCarriers(carriers.map((c) => {
+      if (c.id === overrideCarrierId) {
+        if (Number(overrideRound) === 1) {
+          return { ...c, round1Choice: weeksArray };
+        } else {
+          return { ...c, round2Choice: weeksArray };
+        }
+      }
+      return c;
+    }));
+
+    setOverrideWeeksInput('');
+    alert('Manual bid successfully assigned!');
   };
 
   const handleVerifyPin = () => {
@@ -294,7 +334,7 @@ export default function App() {
               onClick={() => setIsAdminOpen(!isAdminOpen)} 
               style={{ background: '#555', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer' }}
             >
-              {isAdminOpen ? 'Close Roster Admin' : '⚙️ Roster Settings'}
+              {isAdminOpen ? 'Close Roster & Slots' : '⚙️ Roster & Slot Admin'}
             </button>
             <button 
               onClick={handlePrintMasterList} 
@@ -310,6 +350,62 @@ export default function App() {
       {isStewardUnlocked && isStewardView ? (
         <div style={{ background: '#eef2f7', padding: '20px', borderRadius: '8px', border: '1px solid #b0c4de', marginBottom: '20px' }}>
           <h2 style={{ margin: '0 0 10px 0', color: '#003366' }}>🛡️ Steward & Officer Master Board</h2>
+          
+          {/* Manual Bid Entry */}
+          <div style={{ background: '#fff', padding: '14px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #ccd9e8' }}>
+            <h4 style={{ margin: '0 0 8px 0', color: '#003366' }}>✏️ Manual Bid Override Entry</h4>
+            <form onSubmit={handleManualOverrideSubmit} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <select 
+                value={overrideCarrierId} 
+                onChange={(e) => setOverrideCarrierId(e.target.value)}
+                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', flex: 1 }}
+              >
+                <option value="">-- Select Carrier --</option>
+                {carriers.map(c => (
+                  <option key={c.id} value={c.id}>{c.name} (Cat {c.category})</option>
+                ))}
+              </select>
+              <select 
+                value={overrideRound} 
+                onChange={(e) => setOverrideRound(Number(e.target.value))}
+                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc' }}
+              >
+                <option value={1}>Round 1</option>
+                <option value={2}>Round 2</option>
+              </select>
+              <input 
+                type="text" 
+                placeholder="Weeks (e.g. 5, 6, 7)" 
+                value={overrideWeeksInput}
+                onChange={(e) => setOverrideWeeksInput(e.target.value)}
+                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', width: '130px' }}
+              />
+              <button type="submit" style={{ background: '#003366', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                Assign Bid
+              </button>
+            </form>
+          </div>
+
+          {/* Block NALC Event Slots */}
+          <div style={{ background: '#fff', padding: '14px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #ccd9e8' }}>
+            <h4 style={{ margin: '0 0 8px 0', color: '#d9534f' }}>🏛️ Block Out NALC Union Event Slots</h4>
+            <p style={{ fontSize: '12px', color: '#555', margin: '0 0 8px 0' }}>Reserve slots for state/national conventions or union events so carriers cannot bid them:</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px', maxHeight: '130px', overflowY: 'auto' }}>
+              {CALENDAR_WEEKS.map((w) => (
+                <div key={w.weekNum} style={{ fontSize: '12px' }}>
+                  Wk {w.weekNum}: 
+                  <input 
+                    type="number" 
+                    min={0}
+                    value={blockedEventSlots[w.weekNum] || 0} 
+                    onChange={(e) => setBlockedEventSlots({ ...blockedEventSlots, [w.weekNum]: Number(e.target.value) })}
+                    style={{ width: '35px', marginLeft: '4px' }}
+                  /> blocked
+                </div>
+              ))}
+            </div>
+          </div>
+
           <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: '6px', overflow: 'hidden' }}>
             <thead>
               <tr style={{ background: '#003366', color: '#fff', textAlign: 'left', fontSize: '13px' }}>
@@ -359,6 +455,16 @@ export default function App() {
       {isStewardUnlocked && isAdminOpen && (
         <div style={{ background: '#f4f4f4', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ccc' }}>
           <h3>Staffing & Roster Admin</h3>
+          <label style={{ display: 'block', marginBottom: '12px', fontWeight: 'bold' }}>
+            Total Craft Employees (Base for 11% / 14% Prime calculation):
+            <input 
+              type="number" 
+              value={totalEmployees} 
+              onChange={(e) => setTotalEmployees(Number(e.target.value))} 
+              style={{ marginLeft: '8px', padding: '4px', width: '60px' }}
+            />
+          </label>
+
           <form onSubmit={handleAddCarrier} style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
             <input 
               type="text" 
@@ -403,8 +509,8 @@ export default function App() {
             </button>
           </form>
 
-          <h4>Existing Carrier Roster</h4>
-          <ul>
+          <h4>Existing Carrier Roster & Categories</h4>
+          <ul style={{ marginBottom: '20px' }}>
             {carriers.map((c, idx) => (
               <li key={c.id} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <strong style={{ minWidth: '120px' }}>{c.name}</strong>
@@ -431,6 +537,21 @@ export default function App() {
               </li>
             ))}
           </ul>
+
+          <h4 style={{ borderTop: '1px solid #ccc', paddingTop: '12px' }}>Manual Slot Capacity Overrides per Week</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '6px', maxHeight: '150px', overflowY: 'auto' }}>
+            {CALENDAR_WEEKS.map((w) => (
+              <div key={w.weekNum} style={{ fontSize: '12px' }}>
+                Wk {w.weekNum}: 
+                <input 
+                  type="number" 
+                  value={getSlotsForWeek(w)} 
+                  onChange={(e) => setCustomSlots({...customSlots, [w.weekNum]: Number(e.target.value)})}
+                  style={{ width: '35px', marginLeft: '4px' }}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -479,6 +600,7 @@ export default function App() {
               const booked = getBookedCount(week.weekNum);
               const isFull = booked >= maxSlots;
               const isSelected = selectedWeeks.includes(week.weekNum);
+              const blockedCount = blockedEventSlots[week.weekNum] || 0;
 
               return (
                 <button
@@ -504,6 +626,11 @@ export default function App() {
                   <div style={{ fontSize: '11px', marginTop: '2px', color: isSelected ? '#ffffff' : '#333' }}>
                     Slots: {booked}/{maxSlots}
                   </div>
+                  {blockedCount > 0 && (
+                    <div style={{ fontSize: '10px', color: isSelected ? '#ffcccc' : '#d9534f', fontWeight: 'bold', marginTop: '2px' }}>
+                      🏛️ {blockedCount} Union Slot(s) Blocked
+                    </div>
+                  )}
                 </button>
               );
             })}
