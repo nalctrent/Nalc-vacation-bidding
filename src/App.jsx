@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
-// Default Roster with Leave Categories (1, 2, or 3) based on MOU
+// Default Roster including Trenton and Jessica
 const INITIAL_CARRIERS = [
   { id: '1', name: 'Trenton Bauer', category: 3, round1Choice: [], round2Choice: [], completed: false },
   { id: '2', name: 'Jessica', category: 2, round1Choice: [], round2Choice: [], completed: false },
@@ -8,8 +8,39 @@ const INITIAL_CARRIERS = [
   { id: '4', name: 'Jane Smith', category: 3, round1Choice: [], round2Choice: [], completed: false },
 ];
 
-// 52 Weeks calendar setup with Prime Time designations
-const PRIME_TIME_WEEKS = [18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 47, 51, 52];
+// Generate 52 weeks with exact date ranges for the current year
+const generateYearWeeks = () => {
+  const weeks = [];
+  // Start from the first Monday of the year (adjust year as needed)
+  const startDate = new Date(new Date().getFullYear(), 0, 5); 
+  // Adjust to nearest Monday if needed
+  const day = startDate.getDay();
+  const diff = startDate.getDate() - day + (day === 0 ? -6 : 1);
+  startDate.setDate(diff);
+
+  for (let i = 0; i < 52; i++) {
+    const start = new Date(startDate);
+    start.setDate(startDate.getDate() + (i * 7));
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const dateString = `${monthNames[start.getMonth()]} ${String(start.getDate()).padStart(2, '0')} - ${monthNames[end.getMonth()]} ${String(end.getDate()).padStart(2, '0')}`;
+    
+    // Prime time is June (5), July (6), and August (7)
+    const month = start.getMonth();
+    const isPrimeTime = month === 5 || month === 6 || month === 7;
+
+    weeks.push({
+      weekNum: i + 1,
+      dateString,
+      isPrimeTime
+    });
+  }
+  return weeks;
+};
+
+const CALENDAR_WEEKS = generateYearWeeks();
 
 export default function App() {
   const [carriers, setCarriers] = useState(INITIAL_CARRIERS);
@@ -24,16 +55,15 @@ export default function App() {
 
   const currentCarrier = carriers[currentCarrierIndex];
 
-  // Calculate default slots per week based on percentage (14% prime time, 11% non-prime)
-  const getSlotsForWeek = (weekNum) => {
-    if (customSlots[weekNum] !== undefined) {
-      return customSlots[weekNum];
+  // Calculate slots per week: 14% for June/July/August, 11% for standard
+  const getSlotsForWeek = (weekObj) => {
+    if (customSlots[weekObj.weekNum] !== undefined) {
+      return customSlots[weekObj.weekNum];
     }
-    const rate = PRIME_TIME_WEEKS.includes(weekNum) ? 0.14 : 0.11;
+    const rate = weekObj.isPrimeTime ? 0.14 : 0.11;
     return Math.max(1, Math.round(totalEmployees * rate));
   };
 
-  // Get current booked slots count for a week
   const getBookedCount = (weekNum) => {
     return carriers.reduce((count, c) => {
       const r1 = c.round1Choice.includes(weekNum) ? 1 : 0;
@@ -42,7 +72,6 @@ export default function App() {
     }, 0);
   };
 
-  // Resend Officer Alert Trigger
   const triggerOfficerAlert = async (carrierName, roundNumber, weeks, nextCarrierName) => {
     try {
       await fetch('/api/notify', {
@@ -55,13 +84,11 @@ export default function App() {
           nextCarrierName,
         }),
       });
-      console.log('Officer alert dispatched successfully.');
     } catch (err) {
       console.error('Failed to trigger notification:', err);
     }
   };
 
-  // Select / Deselect Week Logic
   const handleWeekClick = (weekNum) => {
     if (selectedWeeks.includes(weekNum)) {
       setSelectedWeeks(selectedWeeks.filter((w) => w !== weekNum));
@@ -80,24 +107,21 @@ export default function App() {
     setSelectedWeeks([...selectedWeeks, weekNum].sort((a, b) => a - b));
   };
 
-  // Submit Bid with Validation Rules
   const handleSubmitBid = async () => {
     if (selectedWeeks.length === 0) {
       alert('Please select at least one week before submitting.');
       return;
     }
 
-    // Consecutive week rule validation for Category 2 & 3 in Round 1 taking 3 weeks (15 days)
     if (currentRound === 1 && selectedWeeks.length === 3) {
       const [w1, w2, w3] = selectedWeeks;
-      const isConsecutive = (w2 === w1 + 1 && w3 === w2 + 1) || (w2 === w1 + 1) || (w3 === w2 + 1);
+      const isConsecutive = (w2 === w1 + 1 && w3 === w2 + 1);
       if (!isConsecutive) {
-        alert('LMOU Rule Violation: Selecting 3 separate single weeks is not permitted. 15-day bids must include at least a 2-week consecutive block.');
+        alert('LMOU Rule Violation: 15-day bids spanning 3 weeks must form a continuous 3-week block (or 2-week consecutive block).');
         return;
       }
     }
 
-    // Save choices to carrier record
     const updatedCarriers = [...carriers];
     if (currentRound === 1) {
       updatedCarriers[currentCarrierIndex].round1Choice = selectedWeeks;
@@ -109,7 +133,6 @@ export default function App() {
     const isEndOfRound = nextIndex >= carriers.length;
     const nextCarrierName = isEndOfRound ? 'End of Round' : carriers[nextIndex].name;
 
-    // Trigger Notification
     await triggerOfficerAlert(currentCarrier.name, currentRound, selectedWeeks, nextCarrierName);
 
     setCarriers(updatedCarriers);
@@ -127,7 +150,7 @@ export default function App() {
   };
 
   return (
-    <div style={{ maxWidth: '900px', margin: '0 auto', padding: '16px', fontFamily: 'Arial, sans-serif' }}>
+    <div style={{ maxWidth: '950px', margin: '0 auto', padding: '16px', fontFamily: 'Arial, sans-serif' }}>
       <header style={{ background: '#003366', color: '#fff', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
         <h1 style={{ margin: 0, fontSize: '20px' }}>NALC Branch 366 Vacation Bidding Portal</h1>
         <p style={{ margin: '4px 0 0 0', fontSize: '14px' }}>
@@ -135,7 +158,6 @@ export default function App() {
         </p>
       </header>
 
-      {/* Admin Panel Toggle */}
       <div style={{ marginBottom: '16px' }}>
         <button 
           onClick={() => setIsAdminOpen(!isAdminOpen)} 
@@ -145,12 +167,11 @@ export default function App() {
         </button>
       </div>
 
-      {/* Admin Section */}
       {isAdminOpen && (
         <div style={{ background: '#f4f4f4', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ccc' }}>
           <h3>Staffing & Slot Capacity Settings</h3>
           <label style={{ display: 'block', marginBottom: '12px' }}>
-            Total Craft Employees (Base for 11% / 14% calculation):
+            Total Craft Employees (Base for 11% / 14% Prime calculation):
             <input 
               type="number" 
               value={totalEmployees} 
@@ -173,52 +194,66 @@ export default function App() {
                   }}
                   style={{ marginLeft: '8px' }}
                 >
-                  <option value={1}>Category 1 (13 Days Earned)</option>
-                  <option value={2}>Category 2 (20 Days Earned)</option>
-                  <option value={3}>Category 3 (26 Days Earned)</option>
+                  <option value={1}>Category 1 (10 Days Max)</option>
+                  <option value={2}>Category 2 (15 Days Max)</option>
+                  <option value={3}>Category 3 (15 Days Max)</option>
                 </select>
               </li>
             ))}
           </ul>
+
+          <h4 style={{ marginTop: '14px' }}>Manual Slot Overrides per Week</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '6px', maxHeight: '150px', overflowY: 'auto' }}>
+            {CALENDAR_WEEKS.map((w) => (
+              <div key={w.weekNum} style={{ fontSize: '12px' }}>
+                Wk {w.weekNum}: 
+                <input 
+                  type="number" 
+                  value={getSlotsForWeek(w)} 
+                  onChange={(e) => setCustomSlots({...customSlots, [w.weekNum]: Number(e.target.value)})}
+                  style={{ width: '35px', marginLeft: '4px' }}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Bidding Grid */}
       {currentCarrier && (
         <div>
           <div style={{ background: '#e6f0fa', padding: '12px', borderRadius: '6px', marginBottom: '16px' }}>
             <h3 style={{ margin: 0, color: '#003366' }}>{currentCarrier.name}'s Selection</h3>
             <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>
-              Category {currentCarrier.category} — Selected ({selectedWeeks.length} week[s]): {selectedWeeks.join(', ') || 'None'}
+              Category {currentCarrier.category} — Selected Weeks: {selectedWeeks.join(', ') || 'None'}
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px', marginBottom: '20px' }}>
-            {Array.from({ length: 52 }, (_, i) => i + 1).map((weekNum) => {
-              const maxSlots = getSlotsForWeek(weekNum);
-              const booked = getBookedCount(weekNum);
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '8px', marginBottom: '20px' }}>
+            {CALENDAR_WEEKS.map((week) => {
+              const maxSlots = getSlotsForWeek(week);
+              const booked = getBookedCount(week.weekNum);
               const isFull = booked >= maxSlots;
-              const isSelected = selectedWeeks.includes(weekNum);
-              const isPrime = PRIME_TIME_WEEKS.includes(weekNum);
+              const isSelected = selectedWeeks.includes(week.weekNum);
 
               return (
                 <button
-                  key={weekNum}
+                  key={week.weekNum}
                   disabled={isFull && !isSelected}
-                  onClick={() => handleWeekClick(weekNum)}
+                  onClick={() => handleWeekClick(week.weekNum)}
                   style={{
                     padding: '10px',
                     borderRadius: '6px',
                     border: isSelected ? '2px solid #003366' : '1px solid #ccc',
-                    background: isSelected ? '#003366' : isFull ? '#ffe6e6' : isPrime ? '#fff8dc' : '#fff',
+                    background: isSelected ? '#003366' : isFull ? '#ffe6e6' : week.isPrimeTime ? '#fff8dc' : '#fff',
                     color: isSelected ? '#fff' : isFull ? '#cc0000' : '#000',
                     textAlign: 'center',
                     cursor: isFull && !isSelected ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  <div style={{ fontWeight: 'bold' }}>Week {weekNum}</div>
-                  <div style={{ fontSize: '11px', marginTop: '2px' }}>
-                    {isPrime ? '☀️ Prime Time' : 'Standard'}
+                  <div style={{ fontWeight: 'bold', fontSize: '13px' }}>Week {week.weekNum}</div>
+                  <div style={{ fontSize: '11px', color: '#444', margin: '2px 0' }}>{week.dateString}</div>
+                  <div style={{ fontSize: '10px', fontWeight: 'bold', color: week.isPrimeTime ? '#b8860b' : '#666' }}>
+                    {week.isPrimeTime ? '☀️ Prime (June-Aug)' : 'Standard'}
                   </div>
                   <div style={{ fontSize: '11px', marginTop: '2px' }}>
                     Slots: {booked}/{maxSlots}
