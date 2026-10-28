@@ -164,7 +164,6 @@ export default function NalcVacationApp() {
   const [pinError, setPinError] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
 
-  // New Carrier Form Modal State
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCarrier, setNewCarrier] = useState({
     name: "",
@@ -285,7 +284,6 @@ export default function NalcVacationApp() {
     setIsPinAuthenticated(false);
   };
 
-  // ROSTER MANAGEMENT FUNCTIONS
   const handleAddCarrierSubmit = (e) => {
     e.preventDefault();
     if (!newCarrier.name) return;
@@ -314,7 +312,6 @@ export default function NalcVacationApp() {
     if (!confirm(`Are you sure you want to remove ${name}? Seniority ranks for carriers below will automatically bump up.`)) return;
 
     const filtered = roster.filter((c) => c.id !== carrierId);
-    // Auto re-rank remaining carriers sequentially
     const reRanked = filtered.map((c, index) => ({
       ...c,
       seniorityRank: index + 1,
@@ -336,7 +333,6 @@ export default function NalcVacationApp() {
     updated[index] = updated[targetIndex];
     updated[targetIndex] = temp;
 
-    // Recalculate ranks sequentially
     const reRanked = updated.map((c, idx) => ({
       ...c,
       seniorityRank: idx + 1,
@@ -363,7 +359,6 @@ export default function NalcVacationApp() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans">
-      {/* Header */}
       <header className="bg-slate-800 border-b border-slate-700 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col md:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -397,7 +392,6 @@ export default function NalcVacationApp() {
           </div>
         </div>
 
-        {/* Tab Navigation */}
         <div className="max-w-7xl mx-auto px-4 flex gap-1 overflow-x-auto text-xs font-medium border-t border-slate-700/50 pt-1">
           <button
             onClick={() => setActiveTab("bidding")}
@@ -462,7 +456,6 @@ export default function NalcVacationApp() {
         </div>
       </header>
 
-      {/* Main Area */}
       <main className="max-w-7xl mx-auto px-4 py-6">
         {copyStatus && (
           <div className="mb-4 bg-emerald-900/80 border border-emerald-500 text-emerald-200 px-4 py-2 rounded-lg text-sm flex items-center gap-2 animate-bounce">
@@ -732,7 +725,7 @@ export default function NalcVacationApp() {
           </div>
         )}
 
-        {/* TAB 3: MANAGE ROSTER (NEW IN-APP EDITOR) */}
+        {/* TAB 3: MANAGE ROSTER */}
         {activeTab === "roster" && (
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -895,4 +888,123 @@ export default function NalcVacationApp() {
 
         {/* TAB 4: LMOU RULES */}
         {activeTab === "lmou" && (
-      
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 max-w-2xl mx-auto space-y-4">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Settings className="w-5 h-5 text-blue-400" /> Station LMOU Parameters
+            </h2>
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">
+                  LMOU Item 9 Cap: Max Carriers Off Per Week
+                </label>
+                <input
+                  type="number"
+                  value={lmou.maxCarriersPerWeek}
+                  onChange={(e) => setLmou({ ...lmou, maxCarriersPerWeek: parseInt(e.target.value) || 1 })}
+                  className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white w-full text-sm font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">
+                  Selection Time Limit Per Carrier (Hours)
+                </label>
+                <input
+                  type="number"
+                  value={lmou.turnTimerHours}
+                  onChange={(e) => setLmou({ ...lmou, turnTimerHours: parseInt(e.target.value) || 24 })}
+                  className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-white w-full text-sm font-semibold"
+                />
+              </div>
+
+              <button
+                onClick={() => alert("LMOU Rules Saved Successfully!")}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-lg text-xs"
+              >
+                Save Local Rules
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5: PS FORM 3971 SLIPS */}
+        {activeTab === "ps3971" && (
+          <div className="space-y-4">
+            <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold text-white">PS Form 3971 Automated Generator</h2>
+                <p className="text-xs text-slate-400">Pre-filled official leave request slips ready for signature.</p>
+              </div>
+              <button
+                onClick={() => window.print()}
+                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1"
+              >
+                <Printer className="w-4 h-4" /> Print All Slips
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {roster.filter((c) => (c.round1Selections || []).length > 0).map((c) => (
+                <div key={c.id} className="bg-white text-slate-900 p-4 rounded-xl shadow border border-slate-300 space-y-2 text-xs">
+                  <div className="flex justify-between border-b border-slate-300 pb-2">
+                    <div>
+                      <h3 className="font-bold text-sm uppercase">PS Form 3971 - Prime Time Choice</h3>
+                      <p className="text-[10px] text-slate-600">US Postal Service Application for Leave</p>
+                    </div>
+                    <span className="font-mono text-xs font-bold bg-slate-100 px-2 py-1 rounded">Rank #{c.seniorityRank}</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <span className="text-[10px] text-slate-500 uppercase block font-bold">Employee Name</span>
+                      <span className="font-bold">{c.name}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 uppercase block font-bold">Type of Leave</span>
+                      <span className="font-bold">Annual Leave (Choice)</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-500 uppercase block font-bold">Requested Vacation Weeks</span>
+                    <span className="font-mono font-bold text-blue-700">{c.round1Selections.join(", ")}</span>
+                  </div>
+
+                  <div className="border-t border-slate-200 pt-3 mt-2 flex justify-between items-end">
+                    <div>
+                      <div className="border-b border-slate-400 w-32 h-6"></div>
+                      <span className="text-[9px] text-slate-500 uppercase">Employee Signature</span>
+                    </div>
+                    <div>
+                      <div className="border-b border-slate-400 w-32 h-6"></div>
+                      <span className="text-[9px] text-slate-500 uppercase">Supervisor Signature</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 6: AUDIT LOG */}
+        {activeTab === "audit" && (
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-3">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Clock className="w-5 h-5 text-blue-400" /> Bidding Audit Trail
+            </h2>
+            <p className="text-xs text-slate-400">Timestamped record of all notifications, roster shifts, link opens, and submitted picks.</p>
+
+            <div className="bg-slate-900 rounded-lg p-4 font-mono text-xs text-slate-300 space-y-2 max-h-96 overflow-y-auto border border-slate-700">
+              {auditLogs.map((log, idx) => (
+                <div key={idx} className="flex gap-3 border-b border-slate-800/80 pb-1.5">
+                  <span className="text-slate-500 shrink-0">[{log.timestamp}]</span>
+                  <span className="text-slate-200">{log.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
