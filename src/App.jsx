@@ -1,11 +1,5 @@
 import React, { useState, useEffect } from 'react';
-
-const INITIAL_CARRIERS = [
-  { id: '1', name: 'Trenton Bauer', category: 3, pin: '1234', phone: '4173964312', contact: '4173964312@tmomail.net', round1Choice: [], round2Choice: [], completed: false },
-  { id: '2', name: 'Jessica', category: 2, pin: '5678', phone: '4173565260', contact: '4173565260@txt.att.net', round1Choice: [], round2Choice: [], completed: false },
-  { id: '3', name: 'John Doe', category: 1, pin: '0000', phone: '', contact: '', round1Choice: [], round2Choice: [], completed: false },
-  { id: '4', name: 'Jane Smith', category: 3, pin: '9999', phone: '', contact: '', round1Choice: [], round2Choice: [], completed: false },
-];
+import { supabase } from './supabaseClient';
 
 const generateYearWeeks = () => {
   const weeks = [];
@@ -34,7 +28,7 @@ const generateYearWeeks = () => {
 const CALENDAR_WEEKS = generateYearWeeks();
 
 export default function App() {
-  const [carriers, setCarriers] = useState(INITIAL_CARRIERS);
+  const [carriers, setCarriers] = useState([]);
   const [currentCarrierIndex, setCurrentCarrierIndex] = useState(0);
   const [currentRound, setCurrentRound] = useState(1);
   const [selectedWeeks, setSelectedWeeks] = useState([]);
@@ -46,11 +40,11 @@ export default function App() {
   const [newCarrierPhone, setNewCarrierPhone] = useState('');
   const [newCarrierContact, setNewCarrierContact] = useState('');
 
-  // Manual Override & Event Block State
+  // Manual Overrides & NALC Event Block State
   const [overrideCarrierId, setOverrideCarrierId] = useState('');
   const [overrideRound, setOverrideRound] = useState(1);
   const [overrideWeeksInput, setOverrideWeeksInput] = useState('');
-  const [blockedEventSlots, setBlockedEventSlots] = useState({}); // { weekNum: blockedCount }
+  const [blockedEventSlots, setBlockedEventSlots] = useState({});
 
   // Security & Authentication
   const [enteredPin, setEnteredPin] = useState('');
@@ -58,13 +52,14 @@ export default function App() {
   const [stewardPinInput, setStewardPinInput] = useState('');
   const [isStewardUnlocked, setIsStewardUnlocked] = useState(false);
 
-  // View States
+  // View & Capacity States
   const [totalEmployees, setTotalEmployees] = useState(30);
   const [customSlots, setCustomSlots] = useState({});
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isStewardView, setIsStewardView] = useState(false);
   const [activeCarrierParam, setActiveCarrierParam] = useState(null);
 
+  // Read carrier ID from URL parameter (?carrierId=X)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const cId = params.get('carrierId');
@@ -72,6 +67,33 @@ export default function App() {
       setActiveCarrierParam(cId);
     }
   }, []);
+
+  // Fetch initial roster from Supabase & subscribe to real-time changes
+  useEffect(() => {
+    fetchCarriers();
+
+    const channel = supabase
+      .channel('public:carriers')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'carriers' }, () => {
+        fetchCarriers();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const fetchCarriers = async () => {
+    const { data, error } = await supabase
+      .from('carriers')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (!error && data) {
+      setCarriers(data);
+    }
+  };
 
   const currentCarrier = carriers[currentCarrierIndex];
   const isTurnForUrlUser = activeCarrierParam 
@@ -88,8 +110,8 @@ export default function App() {
 
   const getBookedCount = (weekNum) => {
     const carrierBooked = carriers.reduce((count, c) => {
-      const r1 = c.round1Choice.includes(weekNum) ? 1 : 0;
-      const r2 = c.round2Choice.includes(weekNum) ? 1 : 0;
+      const r1 = (c.round1Choice || []).includes(weekNum) ? 1 : 0;
+      const r2 = (c.round2Choice || []).includes(weekNum) ? 1 : 0;
       return count + r1 + r2;
     }, 0);
     const blocked = blockedEventSlots[weekNum] || 0;
@@ -131,40 +153,45 @@ export default function App() {
     }
   };
 
-  const handleAddCarrier = (e) => {
+  const handleAddCarrier = async (e) => {
     e.preventDefault();
     if (!newCarrierName.trim() || newCarrierPin.length !== 4) {
-      alert('Please enter a valid Carrier Name and a 4-digit PIN.');
+      alert('Please enter a valid Carrier Name and 4-digit PIN.');
       return;
     }
 
-    const newCarrier = {
-      id: Date.now().toString(),
-      name: newCarrierName.trim(),
-      category: Number(newCarrierCategory),
-      pin: newCarrierPin.trim(),
-      phone: newCarrierPhone.trim(),
-      contact: newCarrierContact.trim(),
-      round1Choice: [],
-      round2Choice: [],
-      completed: false,
-    };
+    const { error } = await supabase.from('carriers').insert([
+      {
+        id: Date.now().toString(),
+        name: newCarrierName.trim(),
+        category: Number(newCarrierCategory),
+        pin: newCarrierPin.trim(),
+        phone: newCarrierPhone.trim(),
+        contact: newCarrierContact.trim(),
+        round1Choice: [],
+        round2Choice: [],
+      },
+    ]);
 
-    setCarriers([...carriers, newCarrier]);
-    setNewCarrierName('');
-    setNewCarrierPin('');
-    setNewCarrierPhone('');
-    setNewCarrierContact('');
-    alert(`Added ${newCarrier.name} to the roster!`);
-  };
-
-  const handleRemoveCarrier = (id) => {
-    if (confirm('Are you sure you want to remove this carrier?')) {
-      setCarriers(carriers.filter(c => c.id !== id));
+    if (!error) {
+      setNewCarrierName('');
+      setNewCarrierPin('');
+      setNewCarrierPhone('');
+      setNewCarrierContact('');
+      alert(`Added ${newCarrierName} to the live shared roster!`);
+    } else {
+      alert(`Error adding carrier: ${error.message}`);
     }
   };
 
-  const handleManualOverrideSubmit = (e) => {
+  const handleRemoveCarrier = async (id) => {
+    if (confirm('Are you sure you want to remove this carrier?')) {
+      const { error } = await supabase.from('carriers').delete().eq('id', id);
+      if (error) alert(`Error deleting carrier: ${error.message}`);
+    }
+  };
+
+  const handleManualOverrideSubmit = async (e) => {
     e.preventDefault();
     if (!overrideCarrierId || !overrideWeeksInput.trim()) {
       alert('Please select a carrier and enter week numbers (e.g. 5, 6, 7).');
@@ -181,19 +208,21 @@ export default function App() {
       return;
     }
 
-    setCarriers(carriers.map((c) => {
-      if (c.id === overrideCarrierId) {
-        if (Number(overrideRound) === 1) {
-          return { ...c, round1Choice: weeksArray };
-        } else {
-          return { ...c, round2Choice: weeksArray };
-        }
-      }
-      return c;
-    }));
+    const updateObj = Number(overrideRound) === 1 
+      ? { round1Choice: weeksArray } 
+      : { round2Choice: weeksArray };
 
-    setOverrideWeeksInput('');
-    alert('Manual bid successfully assigned!');
+    const { error } = await supabase
+      .from('carriers')
+      .update(updateObj)
+      .eq('id', overrideCarrierId);
+
+    if (!error) {
+      setOverrideWeeksInput('');
+      alert('Manual bid successfully assigned live!');
+    } else {
+      alert(`Error updating bid: ${error.message}`);
+    }
   };
 
   const handleVerifyPin = () => {
@@ -246,11 +275,18 @@ export default function App() {
       }
     }
 
-    const updatedCarriers = [...carriers];
-    if (currentRound === 1) {
-      updatedCarriers[currentCarrierIndex].round1Choice = selectedWeeks;
-    } else {
-      updatedCarriers[currentCarrierIndex].round2Choice = selectedWeeks;
+    const updateObj = currentRound === 1 
+      ? { round1Choice: selectedWeeks } 
+      : { round2Choice: selectedWeeks };
+
+    const { error } = await supabase
+      .from('carriers')
+      .update(updateObj)
+      .eq('id', currentCarrier.id);
+
+    if (error) {
+      alert(`Error submitting bid: ${error.message}`);
+      return;
     }
 
     const nextIndex = currentCarrierIndex + 1;
@@ -259,7 +295,6 @@ export default function App() {
 
     await triggerOfficerAlert(currentCarrier.name, currentRound, selectedWeeks, nextCarrier);
 
-    setCarriers(updatedCarriers);
     setSelectedWeeks([]);
     setIsPinAuthenticated(false);
     setEnteredPin('');
@@ -420,6 +455,8 @@ export default function App() {
             <tbody>
               {carriers.map((c) => {
                 const isCurrentTurn = currentCarrier && currentCarrier.id === c.id;
+                const r1Picks = (c.round1Choice || []).join(', ');
+                const r2Picks = (c.round2Choice || []).join(', ');
                 return (
                   <tr key={c.id} style={{ borderBottom: '1px solid #ddd', fontSize: '13px', background: isCurrentTurn ? '#fff9e6' : '#fff' }}>
                     <td style={{ padding: '10px', fontWeight: 'bold' }}>
@@ -427,8 +464,8 @@ export default function App() {
                     </td>
                     <td style={{ padding: '10px' }}>Cat {c.category}</td>
                     <td style={{ padding: '10px', fontFamily: 'monospace' }}>{c.pin}</td>
-                    <td style={{ padding: '10px' }}>{c.round1Choice.length > 0 ? c.round1Choice.join(', ') : <span style={{ color: '#888' }}>Pending</span>}</td>
-                    <td style={{ padding: '10px' }}>{c.round2Choice.length > 0 ? c.round2Choice.join(', ') : <span style={{ color: '#888' }}>Pending</span>}</td>
+                    <td style={{ padding: '10px' }}>{r1Picks ? r1Picks : <span style={{ color: '#888' }}>Pending</span>}</td>
+                    <td style={{ padding: '10px' }}>{r2Picks ? r2Picks : <span style={{ color: '#888' }}>Pending</span>}</td>
                     <td style={{ padding: '10px', display: 'flex', gap: '6px' }}>
                       <button
                         onClick={() => textCarrierDirectly(c)}
@@ -511,22 +548,10 @@ export default function App() {
 
           <h4>Existing Carrier Roster & Categories</h4>
           <ul style={{ marginBottom: '20px' }}>
-            {carriers.map((c, idx) => (
+            {carriers.map((c) => (
               <li key={c.id} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <strong style={{ minWidth: '120px' }}>{c.name}</strong>
-                <span>Cat:</span>
-                <select 
-                  value={c.category} 
-                  onChange={(e) => {
-                    const copy = [...carriers];
-                    copy[idx].category = Number(e.target.value);
-                    setCarriers(copy);
-                  }}
-                >
-                  <option value={1}>Cat 1</option>
-                  <option value={2}>Cat 2</option>
-                  <option value={3}>Cat 3</option>
-                </select>
+                <span>Cat: {c.category}</span>
                 <span>PIN: <code>{c.pin}</code></span>
                 <button 
                   onClick={() => handleRemoveCarrier(c.id)}
