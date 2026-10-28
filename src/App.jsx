@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 
-// Default Roster including Trenton and Jessica
 const INITIAL_CARRIERS = [
   { id: '1', name: 'Trenton Bauer', category: 3, round1Choice: [], round2Choice: [], completed: false },
   { id: '2', name: 'Jessica', category: 2, round1Choice: [], round2Choice: [], completed: false },
@@ -8,12 +7,9 @@ const INITIAL_CARRIERS = [
   { id: '4', name: 'Jane Smith', category: 3, round1Choice: [], round2Choice: [], completed: false },
 ];
 
-// Generate 52 weeks with exact date ranges for the current year
 const generateYearWeeks = () => {
   const weeks = [];
-  // Start from the first Monday of the year (adjust year as needed)
   const startDate = new Date(new Date().getFullYear(), 0, 5); 
-  // Adjust to nearest Monday if needed
   const day = startDate.getDay();
   const diff = startDate.getDate() - day + (day === 0 ? -6 : 1);
   startDate.setDate(diff);
@@ -27,7 +23,7 @@ const generateYearWeeks = () => {
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const dateString = `${monthNames[start.getMonth()]} ${String(start.getDate()).padStart(2, '0')} - ${monthNames[end.getMonth()]} ${String(end.getDate()).padStart(2, '0')}`;
     
-    // Prime time is June (5), July (6), and August (7)
+    // Prime time: June (5), July (6), August (7)
     const month = start.getMonth();
     const isPrimeTime = month === 5 || month === 6 || month === 7;
 
@@ -48,14 +44,12 @@ export default function App() {
   const [currentRound, setCurrentRound] = useState(1);
   const [selectedWeeks, setSelectedWeeks] = useState([]);
   
-  // Staffing and Leave Slot Management
   const [totalEmployees, setTotalEmployees] = useState(30);
   const [customSlots, setCustomSlots] = useState({});
   const [isAdminOpen, setIsAdminOpen] = useState(false);
 
   const currentCarrier = carriers[currentCarrierIndex];
 
-  // Calculate slots per week: 14% for June/July/August, 11% for standard
   const getSlotsForWeek = (weekObj) => {
     if (customSlots[weekObj.weekNum] !== undefined) {
       return customSlots[weekObj.weekNum];
@@ -100,7 +94,7 @@ export default function App() {
       : 1;
 
     if (selectedWeeks.length >= maxWeeksAllowed) {
-      alert(`Category ${currentCarrier.category} carriers are limited to a maximum of ${maxWeeksAllowed} week(s) in Round ${currentRound}.`);
+      alert(`Category ${currentCarrier.category} carriers are limited to a maximum of ${maxWeeksAllowed} selection(s) in Round ${currentRound}.`);
       return;
     }
 
@@ -113,11 +107,14 @@ export default function App() {
       return;
     }
 
+    // Round 1 validation rule for 3 selections
     if (currentRound === 1 && selectedWeeks.length === 3) {
       const [w1, w2, w3] = selectedWeeks;
-      const isConsecutive = (w2 === w1 + 1 && w3 === w2 + 1);
-      if (!isConsecutive) {
-        alert('LMOU Rule Violation: 15-day bids spanning 3 weeks must form a continuous 3-week block (or 2-week consecutive block).');
+      const isAllConsecutive = (w2 === w1 + 1 && w3 === w2 + 1);
+      const isTwoConsecutivePlusOne = (w2 === w1 + 1) || (w3 === w2 + 1);
+
+      if (!isAllConsecutive && !isTwoConsecutivePlusOne) {
+        alert('LMOU Rule Violation: When picking 3 weeks in Round 1, they must either be 3 consecutive weeks OR a 2-week consecutive block plus 1 separate week. They cannot all be completely separated.');
         return;
       }
     }
@@ -243,19 +240,19 @@ export default function App() {
                   style={{
                     padding: '10px',
                     borderRadius: '6px',
-                    border: isSelected ? '2px solid #003366' : '1px solid #ccc',
+                    border: isSelected ? '2px solid #001f3f' : '1px solid #ccc',
                     background: isSelected ? '#003366' : isFull ? '#ffe6e6' : week.isPrimeTime ? '#fff8dc' : '#fff',
-                    color: isSelected ? '#fff' : isFull ? '#cc0000' : '#000',
+                    color: isSelected ? '#ffffff' : isFull ? '#cc0000' : '#000000',
                     textAlign: 'center',
                     cursor: isFull && !isSelected ? 'not-allowed' : 'pointer',
                   }}
                 >
                   <div style={{ fontWeight: 'bold', fontSize: '13px' }}>Week {week.weekNum}</div>
-                  <div style={{ fontSize: '11px', color: '#444', margin: '2px 0' }}>{week.dateString}</div>
-                  <div style={{ fontSize: '10px', fontWeight: 'bold', color: week.isPrimeTime ? '#b8860b' : '#666' }}>
+                  <div style={{ fontSize: '11px', color: isSelected ? '#e0e0e0' : '#555', margin: '2px 0' }}>{week.dateString}</div>
+                  <div style={{ fontSize: '10px', fontWeight: 'bold', color: isSelected ? '#ffcc00' : (week.isPrimeTime ? '#b8860b' : '#666') }}>
                     {week.isPrimeTime ? '☀️ Prime (June-Aug)' : 'Standard'}
                   </div>
-                  <div style={{ fontSize: '11px', marginTop: '2px' }}>
+                  <div style={{ fontSize: '11px', marginTop: '2px', color: isSelected ? '#ffffff' : '#333' }}>
                     Slots: {booked}/{maxSlots}
                   </div>
                 </button>
