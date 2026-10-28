@@ -7,17 +7,32 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { carrierName, roundNumber, selectedWeeks, nextCarrierName } = req.body;
+  const { 
+    carrierName, 
+    roundNumber, 
+    selectedWeeks, 
+    nextCarrierName, 
+    nextCarrierLink, 
+    nextCarrierContact 
+  } = req.body;
+
+  // Primary officer recipients (Trenton & Jessica)
+  const recipients = [
+    'nalctrent@gmail.com',
+    'Jessica.branch366@gmail.com',
+    '4173964312@tmomail.net',
+    '4173565260@txt.att.net'
+  ];
+
+  // Auto-add next carrier's phone SMS gateway / email if entered
+  if (nextCarrierContact && !recipients.includes(nextCarrierContact)) {
+    recipients.push(nextCarrierContact);
+  }
 
   try {
     const data = await resend.emails.send({
       from: 'NALC Vacation Portal <onboarding@resend.dev>',
-      to: [
-        'nalctrent@gmail.com',
-        'Jessica.branch366@gmail.com',
-        '4173964312@tmomail.net',
-        '4173565260@txt.att.net'
-      ],
+      to: recipients,
       subject: `NALC BID ALERT: Round ${roundNumber} - ${carrierName}`,
       html: `
         <div style="font-family: Arial, sans-serif; padding: 15px; color: #111;">
@@ -28,10 +43,16 @@ export default async function handler(req, res) {
           <p><strong>Round:</strong> Round ${roundNumber}</p>
           <p><strong>Selected Weeks:</strong> ${selectedWeeks.join(', ')}</p>
           
-          <div style="background-color: #e6f0fa; padding: 10px; border-radius: 6px; margin-top: 12px;">
+          <div style="background-color: #e6f0fa; padding: 12px; border-radius: 6px; margin-top: 12px;">
             <p style="margin: 0; font-weight: bold; color: #003366;">
               👉 NEXT UP IN TURN: ${nextCarrierName || 'End of Roster'}
             </p>
+            ${nextCarrierLink ? `
+              <p style="margin-top: 8px; font-size: 14px;">
+                <strong>Personal Bidding Link:</strong><br/>
+                <a href="${nextCarrierLink}" style="color: #003366; font-weight: bold;">${nextCarrierLink}</a>
+              </p>
+            ` : ''}
           </div>
         </div>
       `,
