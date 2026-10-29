@@ -83,11 +83,14 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isStewardView, setIsStewardView] = useState(true);
 
-  // Live Supabase sync on load
+  // Live Supabase sync on initial page mount
   useEffect(() => {
     const syncData = async () => {
       try {
-        const { data, error } = await supabase.from('carriers').select('*').order('seniority_order', { ascending: true });
+        const { data, error } = await supabase
+          .from('carriers')
+          .select('*')
+          .order('seniority_order', { ascending: true });
         if (!error && data && data.length > 0) {
           setCarriers(data);
         }
@@ -107,7 +110,9 @@ export default function App() {
       const found = carriers.find(c => String(c.id) === String(savedId));
       if (found) {
         const globalRound = carriers.every(c => c.round1Choice && c.round1Choice.length > 0) ? 2 : 1;
-        const finishedCurrent = globalRound === 1 ? (found.round1Choice && found.round1Choice.length > 0) : (found.round2Choice && found.round2Choice.length > 0);
+        const finishedCurrent = globalRound === 1 
+          ? (found.round1Choice && found.round1Choice.length > 0) 
+          : (found.round2Choice && found.round2Choice.length > 0);
         
         if (finishedCurrent && !isStewardUnlocked) {
           localStorage.removeItem('nalc_logged_in_carrier');
@@ -337,34 +342,26 @@ export default function App() {
     setSelectedWeeks([...selectedWeeks, weekNum].sort((a, b) => a - b));
   };
 
+  // CLEAN, DIRECT DATABASE SUBMIT
   const handleSubmitBid = async () => {
     if (selectedWeeks.length === 0 || !currentCarrier) return;
 
     const hasCompletedR1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
     const activeRound = hasCompletedR1 ? 2 : 1;
-
-    // Send both camelCase and snake_case keys to match whichever column naming scheme Supabase uses
     const fieldToUpdate = activeRound === 1 
-      ? { round1Choice: selectedWeeks, round_1_choice: selectedWeeks } 
-      : { round2Choice: selectedWeeks, round_2_choice: selectedWeeks };
+      ? { round1Choice: selectedWeeks } 
+      : { round2Choice: selectedWeeks };
 
     try {
-      const { data, error, count } = await supabase
+      const { error } = await supabase
         .from('carriers')
-        .update(fieldToUpdate, { count: 'exact' })
-        .or(`id.eq.${currentCarrier.id},name.ilike.${currentCarrier.name.trim()}`);
+        .update(fieldToUpdate)
+        .eq('id', currentCarrier.id);
 
       if (error) {
         alert(`Supabase Error: ${error.message}`);
         return;
       }
-
-      if (count === 0) {
-        alert(`Database connected, but 0 rows matched carrier "${currentCarrier.name}" (ID: ${currentCarrier.id}).`);
-        return;
-      }
-
-      alert(`Success! Saved Round ${activeRound} picks for ${currentCarrier.name}.`);
     } catch (err) {
       alert(`Network Error: ${err.message}`);
       return;
@@ -389,6 +386,8 @@ export default function App() {
     localStorage.removeItem('nalc_logged_in_carrier');
     setCurrentCarrier(null);
     setSelectedWeeks([]);
+    
+    alert(`Round ${activeRound} selections successfully submitted for ${currentCarrier.name}!`);
     window.location.reload();
   };
 
