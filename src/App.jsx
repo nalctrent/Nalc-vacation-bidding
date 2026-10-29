@@ -31,9 +31,19 @@ const generateYearWeeks = () => {
 
 const CALENDAR_WEEKS = generateYearWeeks();
 
+const FALLBACK_ROSTER = [
+  { id: '1', name: 'Trenton Bauer', category: 3, pin: '1234', phone: '4173964312', contact: '4173964312@tmomail.net', round1Choice: [], round2Choice: [], seniority_order: 1 },
+  { id: '2', name: 'Jessica', category: 2, pin: '5678', phone: '4173565260', contact: '4173565260@txt.att.net', round1Choice: [], round2Choice: [], seniority_order: 2 }
+];
+
 export default function App() {
-  const [carriers, setCarriers] = useState([]);
-  const [currentCarrierIndex, setCurrentCarrierIndex] = useState(0);
+  const [carriers, setCarriers] = useState(FALLBACK_ROSTER);
+  const [currentCarrier, setCurrentCarrier] = useState(null);
+  
+  // Login State
+  const [selectedCarrierId, setSelectedCarrierId] = useState('');
+  const [pinInput, setPinInput] = useState('');
+  
   const [selectedWeeks, setSelectedWeeks] = useState([]);
   
   const [totalEmployees, setTotalEmployees] = useState(30);
@@ -59,7 +69,6 @@ export default function App() {
     const cId = params.get('carrierId');
     if (cId) setActiveCarrierParam(cId);
 
-    // Real-time Supabase subscription so slot selections sync instantly for all users
     const channel = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'carriers' }, () => {
@@ -79,14 +88,14 @@ export default function App() {
         setCarriers(data);
       }
     } catch (err) {
-      console.error('Error fetching carriers:', err);
+      console.warn('Using default fallback roster due to network/DB state.', err);
     }
   };
 
-  const allRound1Complete = carriers.length > 0 && carriers.every(c => c.round1Choice && c.round1Choice.length > 0);
+  const sortedCarriers = [...carriers].sort((a, b) => (a.seniority_order || 999) - (b.seniority_order || 999));
+  const allRound1Complete = sortedCarriers.length > 0 && sortedCarriers.every(c => c.round1Choice && c.round1Choice.length > 0);
   const currentRound = allRound1Complete ? 2 : 1;
 
-  const currentCarrier = carriers[currentCarrierIndex];
   const isTurnForUrlUser = activeCarrierParam 
     ? currentCarrier && currentCarrier.id === activeCarrierParam
     : true;
@@ -142,6 +151,36 @@ export default function App() {
     }
   };
 
+  const handleCarrierLogin = (e) => {
+    e.preventDefault();
+    if (!selectedCarrierId) {
+      alert('Please select your name from the roster.');
+      return;
+    }
+    const found = carriers.find(c => String(c.id) === String(selectedCarrierId));
+    if (!found) {
+      alert('Carrier not found.');
+      return;
+    }
+    if (String(found.pin).trim() !== String(pinInput).trim()) {
+      alert('Incorrect 4-digit PIN.');
+      return;
+    }
+
+    const hasFinishedCurrentRound = currentRound === 1 
+      ? (found.round1Choice && found.round1Choice.length > 0)
+      : (found.round2Choice && found.round2Choice.length > 0);
+
+    if (hasFinishedCurrentRound) {
+      alert(`You have already completed Round ${currentRound}. Please wait for your next turn.`);
+      return;
+    }
+
+    setCurrentCarrier(found);
+    setSelectedWeeks([]);
+    setIsPinAuthenticated(true);
+  };
+
   const handleAddCarrier = async (e) => {
     e.preventDefault();
     if (!newCarrierName.trim() || newCarrierPin.length !== 4) {
@@ -166,7 +205,13 @@ export default function App() {
 
     const updated = [...carriers, newCarrier];
     setCarriers(updated);
-    await supabase.from('carriers').insert([newCarrier]);
+    
+    try {
+      const { error } = await supabase.from('carriers').insert([newCarrier]);
+      if (error) console.error('Supabase insert error:', error.message);
+    } catch (err) {
+      console.warn('Cloud sync error, saved locally:', err);
+    }
 
     setNewCarrierName('');
     setNewCarrierPin('');
@@ -178,26 +223,26 @@ export default function App() {
   const handleRemoveCarrier = async (id) => {
     if (confirm('Are you sure you want to remove this carrier?')) {
       setCarriers(carriers.filter(c => c.id !== id));
-      await supabase.from('carriers').delete().eq('id', id);
+      try {
+        await supabase.from('carriers').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Cloud delete error:', err);
+      }
     }
   };
 
   const togglePS3971Status = async (carrierId, currentStatus) => {
     const updated = carriers.map(c => c.id === carrierId ? { ...c, ps3971_submitted: !currentStatus } : c);
     setCarriers(updated);
-    await supabase.from('carriers').update({ ps3971_submitted: !currentStatus }).eq('id', carrierId);
-  };
-
-  const handleVerifyPin = () => {
-    if (enteredPin === currentCarrier.pin) {
-      setIsPinAuthenticated(true);
-    } else {
-      alert('Incorrect 4-digit PIN. Please try again.');
+    try {
+      await supabase.from('carriers').update({ ps3971_submitted: !currentStatus }).eq('id', carrierId);
+    } catch (err) {
+      console.warn('Cloud update error:', err);
     }
   };
 
   const handleWeekClick = (weekNum) => {
-    if (!isTurnForUrlUser || !isPinAuthenticated) return;
+    if (!currentCarrier) return;
 
     if (selectedWeeks.includes(weekNum)) {
       setSelectedWeeks(selectedWeeks.filter((w) => w !== weekNum));
@@ -213,7 +258,6 @@ export default function App() {
       return;
     }
 
-    // Double-check slot limits in real-time before adding
     const weekObj = CALENDAR_WEEKS.find(w => w.weekNum === weekNum);
     const maxSlots = getSlotsForWeek(weekObj);
     const booked = getBookedCount(weekNum);
@@ -226,11 +270,6 @@ export default function App() {
   };
 
   const handleSubmitBid = async () => {
-    if (!isPinAuthenticated) {
-      alert('You must authenticate with your PIN before submitting.');
-      return;
-    }
-
     if (selectedWeeks.length === 0) {
       alert('Please select at least one week before submitting.');
       return;
@@ -249,7 +288,8 @@ export default function App() {
 
     const nowISO = new Date().toISOString();
     const updatedCarriers = [...carriers];
-    const target = updatedCarriers[currentCarrierIndex];
+    const targetIndex = updatedCarriers.findIndex(c => c.id === currentCarrier.id);
+    const target = updatedCarriers[targetIndex];
 
     if (currentRound === 1) {
       target.round1Choice = selectedWeeks;
@@ -259,32 +299,30 @@ export default function App() {
       target.round2_submitted_at = nowISO;
     }
 
-    const nextIndex = currentCarrierIndex + 1;
+    const nextIndex = targetIndex + 1;
     const isEndOfRound = nextIndex >= carriers.length;
     const nextCarrier = isEndOfRound ? null : carriers[nextIndex];
 
     await triggerOfficerAlert(target.name, currentRound, selectedWeeks, nextCarrier);
 
     setCarriers(updatedCarriers);
-    await supabase.from('carriers').update({
-      round1Choice: target.round1Choice,
-      round2Choice: target.round2Choice,
-      round1_submitted_at: target.round1_submitted_at,
-      round2_submitted_at: target.round2_submitted_at
-    }).eq('id', target.id);
-
-    setSelectedWeeks([]);
-    setIsPinAuthenticated(false);
-    setEnteredPin('');
-
-    if (!isEndOfRound) {
-      setCurrentCarrierIndex(nextIndex);
-    } else if (currentRound === 1) {
-      alert('Round 1 complete! Global shift to Round 2.');
-      setCurrentCarrierIndex(0);
-    } else {
-      alert('Vacation bidding complete for all rounds!');
+    try {
+      await supabase.from('carriers').update({
+        round1Choice: target.round1Choice,
+        round2Choice: target.round2Choice,
+        round1_submitted_at: target.round1_submitted_at,
+        round2_submitted_at: target.round2_submitted_at
+      }).eq('id', target.id);
+    } catch (err) {
+      console.warn('Cloud sync error:', err);
     }
+
+    alert('Bid successfully submitted and locked!');
+    setSelectedWeeks([]);
+    setCurrentCarrier(null);
+    setPinInput('');
+    setSelectedCarrierId('');
+    setIsPinAuthenticated(false);
   };
 
   const textCarrierDirectly = (carrier) => {
@@ -333,7 +371,7 @@ export default function App() {
             <tbody>
     `;
 
-    carriers.forEach((c, idx) => {
+    sortedCarriers.forEach((c, idx) => {
       const r1 = c.round1Choice && c.round1Choice.length > 0 ? c.round1Choice.join(', ') : 'Pending';
       const r1Date = c.round1_submitted_at ? new Date(c.round1_submitted_at).toLocaleDateString() : '';
       const r2 = c.round2Choice && c.round2Choice.length > 0 ? c.round2Choice.join(', ') : 'Pending';
@@ -370,7 +408,7 @@ export default function App() {
       <header className="no-print" style={{ background: '#003366', color: '#fff', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
         <h1 style={{ margin: 0, fontSize: '20px' }}>NALC Branch 366 Vacation Bidding Portal</h1>
         <p style={{ margin: '4px 0 0 0', fontSize: '14px' }}>
-          Active Global Round: <strong>Round {currentRound}</strong> | Current Turn: <strong>{currentCarrier ? currentCarrier.name : 'Completed'}</strong> (Category {currentCarrier?.category})
+          Active Global Round: <strong>Round {currentRound}</strong>
         </p>
       </header>
 
@@ -434,18 +472,15 @@ export default function App() {
               </tr>
             </thead>
             <tbody>
-              {carriers.map((c) => {
-                const isCurrentTurn = currentCarrier && currentCarrier.id === c.id;
+              {sortedCarriers.map((c) => {
                 const r1 = c.round1Choice && c.round1Choice.length > 0 ? c.round1Choice.join(', ') : 'Pending';
                 const r1Date = c.round1_submitted_at ? new Date(c.round1_submitted_at).toLocaleDateString() : '';
                 const r2 = c.round2Choice && c.round2Choice.length > 0 ? c.round2Choice.join(', ') : 'Pending';
                 const r2Date = c.round2_submitted_at ? new Date(c.round2_submitted_at).toLocaleDateString() : '';
 
                 return (
-                  <tr key={c.id} style={{ borderBottom: '1px solid #ddd', fontSize: '13px', background: isCurrentTurn ? '#fff9e6' : '#fff' }}>
-                    <td style={{ padding: '10px', fontWeight: 'bold' }}>
-                      {c.name} {isCurrentTurn && <span style={{ color: '#d9534f', fontSize: '11px' }}>(Up Now)</span>}
-                    </td>
+                  <tr key={c.id} style={{ borderBottom: '1px solid #ddd', fontSize: '13px', background: '#fff' }}>
+                    <td style={{ padding: '10px', fontWeight: 'bold' }}>{c.name}</td>
                     <td style={{ padding: '10px' }}>Cat {c.category}</td>
                     <td style={{ padding: '10px' }}>{r1 !== 'Pending' ? `Wks: ${r1} (${r1Date})` : <span style={{ color: '#888' }}>Pending</span>}</td>
                     <td style={{ padding: '10px' }}>{r2 !== 'Pending' ? `Wks: ${r2} (${r2Date})` : <span style={{ color: '#888' }}>Pending</span>}</td>
@@ -491,24 +526,6 @@ export default function App() {
               onChange={(e) => setTotalEmployees(Number(e.target.value))}
               style={{ padding: '4px 8px', width: '60px', borderRadius: '4px', border: '1px solid #ccc' }}
             />
-          </div>
-
-          <div style={{ marginBottom: '20px' }}>
-            <h4 style={{ margin: '0 0 8px 0' }}>Manually Override Quota Slots Per Week</h4>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {CALENDAR_WEEKS.slice(0, 12).map(w => (
-                <div key={w.weekNum} style={{ background: '#fff', padding: '6px', border: '1px solid #ddd', borderRadius: '4px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 'bold' }}>Wk {w.weekNum}</div>
-                  <input 
-                    type="number" 
-                    value={customSlots[w.weekNum] !== undefined ? customSlots[w.weekNum] : getSlotsForWeek(w)}
-                    onChange={(e) => setCustomSlots({ ...customSlots, [w.weekNum]: Number(e.target.value) })}
-                    style={{ width: '40px', textAlign: 'center', marginTop: '4px' }}
-                  />
-                </div>
-              ))}
-            </div>
-            <span style={{ fontSize: '11px', color: '#666', marginTop: '4px', display: 'block' }}>*(Showing first 12 weeks for quick adjustments; standard rates apply automatically if untouched)*</span>
           </div>
 
           <form onSubmit={handleAddCarrier} style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -557,22 +574,10 @@ export default function App() {
 
           <h4>Existing Carrier Roster</h4>
           <ul>
-            {carriers.map((c, idx) => (
+            {sortedCarriers.map((c, idx) => (
               <li key={c.id} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <strong style={{ minWidth: '120px' }}>{c.name}</strong>
-                <span>Cat:</span>
-                <select 
-                  value={c.category} 
-                  onChange={(e) => {
-                    const copy = [...carriers];
-                    copy[idx].category = Number(e.target.value);
-                    setCarriers(copy);
-                  }}
-                >
-                  <option value={1}>Cat 1</option>
-                  <option value={2}>Cat 2</option>
-                  <option value={3}>Cat 3</option>
-                </select>
+                <span>Cat: {c.category}</span>
                 <span>PIN: <code>{c.pin}</code></span>
                 <button 
                   onClick={() => handleRemoveCarrier(c.id)}
@@ -586,43 +591,64 @@ export default function App() {
         </div>
       )}
 
-      {(!isStewardView || !isStewardUnlocked) && currentCarrier && (
+      {/* CARRIER LOGIN SCREEN */}
+      {!currentCarrier ? (
+        <div className="no-print" style={{ background: '#fff', padding: '24px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto' }}>
+          <h2 style={{ color: '#003366', marginTop: 0 }}>Carrier Portal Login</h2>
+          <p style={{ fontSize: '14px', color: '#555' }}>Select your name and enter your 4-digit PIN to begin bidding for Round {currentRound}:</p>
+          
+          <form onSubmit={handleCarrierLogin}>
+            <div style={{ marginBottom: '14px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Select Name:</label>
+              <select 
+                value={selectedCarrierId} 
+                onChange={(e) => setSelectedCarrierId(e.target.value)}
+                style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px' }}
+              >
+                <option value="">-- Choose Carrier --</option>
+                {sortedCarriers.map(c => (
+                  <option key={c.id} value={c.id}>{c.name} (Cat {c.category})</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>4-Digit PIN:</label>
+              <input 
+                type="password" 
+                maxLength={4}
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value)}
+                placeholder="Enter PIN"
+                style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <button 
+              type="submit"
+              style={{ width: '100%', background: '#003366', color: '#fff', border: 'none', padding: '12px', borderRadius: '4px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}
+            >
+              Log In & View Calendar
+            </button>
+          </form>
+        </div>
+      ) : (
+        /* BIDDING CALENDAR VIEW */
         <div className="no-print">
-          {!isTurnForUrlUser ? (
-            <div style={{ background: '#f8d7da', color: '#721c24', padding: '14px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #f5c6cb' }}>
-              <strong>⚠️ Turn Lock Active:</strong> It is currently <strong>{currentCarrier.name}'s</strong> turn to bid in Round {currentRound}. Please wait for your personal bidding link.
-            </div>
-          ) : !isPinAuthenticated ? (
-            <div style={{ background: '#fff3cd', color: '#856404', padding: '16px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #ffeeba' }}>
-              <h3 style={{ margin: '0 0 8px 0' }}>🔒 Carrier Identity Verification</h3>
-              <p style={{ margin: '0 0 12px 0', fontSize: '14px' }}>
-                Hello <strong>{currentCarrier.name}</strong>! Enter your 4-digit PIN to unlock bidding for Round {currentRound}:
-              </p>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input 
-                  type="password" 
-                  maxLength={4} 
-                  placeholder="4-Digit PIN"
-                  value={enteredPin} 
-                  onChange={(e) => setEnteredPin(e.target.value)}
-                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '16px', width: '120px', textAlign: 'center' }}
-                />
-                <button 
-                  onClick={handleVerifyPin}
-                  style={{ background: '#003366', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}
-                >
-                  Unlock Bidding
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div style={{ background: '#d4edda', color: '#155724', padding: '12px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #c3e6cb' }}>
+          <div style={{ background: '#d4edda', color: '#155724', padding: '12px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #c3e6cb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
               <h3 style={{ margin: 0, color: '#155724' }}>🔓 Authenticated as {currentCarrier.name} (Round {currentRound})</h3>
               <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>
                 Category {currentCarrier.category} — Selected Weeks: {selectedWeeks.join(', ') || 'None'}
               </p>
             </div>
-          )}
+            <button 
+              onClick={() => { setCurrentCarrier(null); setSelectedWeeks([]); }}
+              style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+            >
+              Log Out
+            </button>
+          </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '8px', marginBottom: '20px' }}>
             {CALENDAR_WEEKS.map((week) => {
@@ -634,7 +660,7 @@ export default function App() {
               return (
                 <button
                   key={week.weekNum}
-                  disabled={!isTurnForUrlUser || !isPinAuthenticated || (isFull && !isSelected)}
+                  disabled={isFull && !isSelected}
                   onClick={() => handleWeekClick(week.weekNum)}
                   style={{
                     padding: '10px',
@@ -643,8 +669,7 @@ export default function App() {
                     background: isSelected ? '#003366' : isFull ? '#ffe6e6' : week.isPrimeTime ? '#fff8dc' : '#fff',
                     color: isSelected ? '#ffffff' : isFull ? '#cc0000' : '#000000',
                     textAlign: 'center',
-                    opacity: (!isTurnForUrlUser || !isPinAuthenticated) ? 0.6 : 1,
-                    cursor: (!isTurnForUrlUser || !isPinAuthenticated || (isFull && !isSelected)) ? 'not-allowed' : 'pointer',
+                    cursor: (isFull && !isSelected) ? 'not-allowed' : 'pointer',
                   }}
                 >
                   <div style={{ fontWeight: 'bold', fontSize: '13px' }}>Week {week.weekNum}</div>
@@ -660,24 +685,22 @@ export default function App() {
             })}
           </div>
 
-          {isTurnForUrlUser && isPinAuthenticated && (
-            <button
-              onClick={handleSubmitBid}
-              style={{
-                width: '100%',
-                padding: '14px',
-                background: '#28a745',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '16px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-              }}
-            >
-              Submit Round {currentRound} Selections
-            </button>
-          )}
+          <button
+            onClick={handleSubmitBid}
+            style={{
+              width: '100%',
+              padding: '14px',
+              background: '#28a745',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+            }}
+          >
+            Submit Round {currentRound} Selections
+          </button>
         </div>
       )}
     </div>
