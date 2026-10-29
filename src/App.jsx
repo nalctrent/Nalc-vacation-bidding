@@ -118,6 +118,7 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
+  // BULLETPROOF URL TOKEN LOOKUP (TRIMS WHITESPACE AND STRINGS TO PREVENT ID MISMATCHES)
   useEffect(() => {
     if (!isDataLoaded) return;
 
@@ -125,7 +126,9 @@ export default function App() {
     const targetId = params.get('carrierId');
 
     if (targetId) {
-      const found = carriers.find(c => String(c.id) === String(targetId));
+      const cleanTargetId = String(targetId).trim();
+      const found = carriers.find(c => String(c.id).trim() === cleanTargetId);
+      
       if (found) {
         const hasFinishedRound = currentRound === 1 
           ? (found.round1Choice && found.round1Choice.length > 0)
@@ -141,7 +144,7 @@ export default function App() {
         setCurrentCarrier(found);
         setSelectedWeeks([]);
       } else {
-        setPortalMessage('Invalid carrier link token.');
+        setPortalMessage(`Carrier link token not recognized in active database.`);
       }
     }
   }, [isDataLoaded, carriers, currentRound, isStewardUnlocked]);
@@ -209,6 +212,13 @@ export default function App() {
     window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
   };
 
+  const handleBypassCarrier = async (carrierToBypass) => {
+    if (!confirm(`Bypass ${carrierToBypass.name}?`)) return;
+    const updated = carriers.map(c => c.id === carrierToBypass.id ? { ...c, status: 'bypassed' } : c);
+    saveCarriersState(updated);
+    try { await supabase.from('carriers').update({ status: 'bypassed' }).eq('id', carrierToBypass.id); } catch (err) {}
+  };
+
   const handleAddCarrier = async (e) => {
     e.preventDefault();
     if (!newCarrierName.trim()) return;
@@ -230,6 +240,7 @@ export default function App() {
     saveCarriersState(updated);
     try { await supabase.from('carriers').insert([newCarrier]); } catch (err) {}
     setNewCarrierName(''); setNewCarrierPhone(''); setNewCarrierContact(''); setNewCarrierRank('');
+    alert(`Successfully added ${newCarrier.name} to the roster!`);
   };
 
   const handleUpdateRank = async (id, newRank) => {
