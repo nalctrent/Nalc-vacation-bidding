@@ -5,9 +5,6 @@ const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || 'https://your-supabase
 const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY || 'your-supabase-anon-key';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Hardcoded public deployment URL to prevent Vercel login interception on mobile SMS
-const PUBLIC_APP_URL = 'https://nalc-366.vercel.app';
-
 const calculateBiddingDeadline = (startDate = new Date()) => {
   const deadline = new Date(startDate.getTime() + 48 * 60 * 60 * 1000);
   const dayOfWeek = startDate.getDay();
@@ -208,8 +205,17 @@ export default function App() {
       }).eq('id', carrier.id);
     } catch (err) {}
 
-    // Uses clean production URL domain to avoid Vercel login prompts
-    const portalLink = `${PUBLIC_APP_URL}/?carrierId=${carrier.id}`;
+    // AUTOMATICALLY BUILDS LINK FROM YOUR CURRENT BROWSER ADDRESS
+    const currentDomain = window.location.origin.includes('vercel.com') 
+      ? window.location.href.split('/?')[0].split('#')[0] 
+      : window.location.origin;
+      
+    const cleanBase = currentDomain.includes('vercel.com') && currentDomain.includes('nalc') 
+      ? currentDomain 
+      : window.location.origin;
+
+    const portalLink = `${cleanBase}/?carrierId=${carrier.id}`;
+
     const deadlineFormatted = deadline.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! You have until ${deadlineFormatted} to submit your picks: ${portalLink}`);
     
