@@ -5,6 +5,24 @@ const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || 'https://your-supabase
 const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY || 'your-supabase-anon-key';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// Helper function to calculate 48-hour deadline excluding blackout weekend hours (Sat 4 PM to Mon 7:30 AM)
+const calculateBiddingDeadline = (startDate = new Date()) => {
+  const deadline = new Date(startDate.getTime() + 48 * 60 * 60 * 1000); // Base 48 hours
+  const dayOfWeek = startDate.getDay(); // 0 = Sun, 6 = Sat
+  const hour = startDate.getHours();
+  const BLACKOUT_MS = 39.5 * 60 * 60 * 1000; // 39.5 hours from Sat 4 PM to Mon 7:30 AM
+
+  if (
+    (dayOfWeek === 5 && hour >= 16) || // Friday after 4 PM
+    dayOfWeek === 6 ||                  // Saturday
+    dayOfWeek === 0 ||                  // Sunday
+    (dayOfWeek === 1 && hour < 7)       // Monday before 7:30 AM
+  ) {
+    deadline.setTime(deadline.getTime() + BLACKOUT_MS);
+  }
+  return deadline;
+};
+
 const generateYearWeeks = () => {
   const weeks = [];
   const startDate = new Date(new Date().getFullYear(), 0, 5); 
@@ -32,9 +50,9 @@ const generateYearWeeks = () => {
 const CALENDAR_WEEKS = generateYearWeeks();
 
 const DEFAULT_ROSTER = [
-  { id: '1', name: 'Trenton Bauer', category: 3, pin: '1234', phone: '4173964312', contact: 'nalctrent@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 1, ps3971_submitted: false },
-  { id: '2', name: 'Jessica', category: 2, pin: '5678', phone: '4173565260', contact: '', round1Choice: [], round2Choice: [], seniority_order: 2, ps3971_submitted: false },
-  { id: '3', name: 'John Doe', category: 1, pin: '0000', phone: '', contact: '', round1Choice: [], round2Choice: [], seniority_order: 3, ps3971_submitted: false }
+  { id: '1', name: 'Trenton Bauer', category: 3, pin: '1234', phone: '4173964312', contact: 'nalctrent@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 1, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'active' },
+  { id: '2', name: 'Jessica', category: 2, pin: '5678', phone: '4173565260', contact: 'Jessica.branch366@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 2, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' },
+  { id: '3', name: 'John Doe', category: 1, pin: '0000', phone: '', contact: '', round1Choice: [], round2Choice: [], seniority_order: 3, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' }
 ];
 
 export default function App() {
@@ -88,8 +106,8 @@ export default function App() {
   const currentRound = allRound1Complete ? 2 : 1;
 
   const activeBiddingCarrier = currentRound === 1
-    ? sortedCarriers.find(c => !c.round1Choice || c.round1Choice.length === 0)
-    : sortedCarriers.find(c => !c.round2Choice || c.round2Choice.length === 0);
+    ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
+    : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
   const getSlotsForWeek = (weekObj) => {
     if (customSlots[weekObj.weekNum] !== undefined) {
@@ -107,17 +125,17 @@ export default function App() {
     }, 0);
   };
 
-  const triggerOfficerAlert = async (carrierName, roundNumber, weeks) => {
+  const triggerOfficerAlert = async (carrierName, roundNumber, weeks, deadlineStr) => {
     try {
       await fetch('/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           carrierName,
-          roundNumber,
-          selectedWeeks: weeks,
-          nextCarrierName: activeBiddingCarrier ? activeBiddingCarrier.name : 'All Bidding Completed',
-          nextCarrierContact: 'nalctrent@gmail.com',
+          round: `Round ${roundNumber}`,
+          selectedWeeks: weeks.join(', '),
+          nextCarrier: activeBiddingCarrier ? activeBiddingCarrier.name : 'All Bidding Completed',
+          deadline: deadlineStr
         }),
       });
     } catch (err) {
@@ -170,6 +188,51 @@ export default function App() {
     setSelectedWeeks([]);
   };
 
+  // Steward Action: Send link and start 48-hour clock
+  const handleSendLinkAndStartTimer = async (carrier) => {
+    const now = new Date();
+    const deadline = calculateBiddingDeadline(now);
+
+    const updated = carriers.map(c => c.id === carrier.id ? {
+      ...c,
+      link_sent_at: now.toISOString(),
+      deadline_at: deadline.toISOString(),
+      status: 'active'
+    } : c);
+
+    saveCarriersState(updated);
+    try {
+      await supabase.from('carriers').update({
+        link_sent_at: now.toISOString(),
+        deadline_at: deadline.toISOString(),
+        status: 'active'
+      }).eq('id', carrier.id);
+    } catch (err) {}
+
+    const portalLink = window.location.origin + window.location.pathname;
+    const deadlineFormatted = deadline.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! You have until ${deadlineFormatted} to submit your picks: ${portalLink}`);
+    
+    window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
+  };
+
+  // Steward Action: Bypass overdue carrier and activate next in line
+  const handleBypassCarrier = async (carrierToBypass) => {
+    if (!confirm(`Are you sure you want to bypass ${carrierToBypass.name} for failing to respond within 48 hours?`)) return;
+
+    const updatedCarriers = carriers.map(c => {
+      if (c.id === carrierToBypass.id) return { ...c, status: 'bypassed' };
+      return c;
+    });
+
+    saveCarriersState(updatedCarriers);
+    try {
+      await supabase.from('carriers').update({ status: 'bypassed' }).eq('id', carrierToBypass.id);
+    } catch (err) {}
+
+    alert(`${carrierToBypass.name} has been bypassed. The next carrier can now be notified.`);
+  };
+
   const handleAddCarrier = async (e) => {
     e.preventDefault();
     if (!newCarrierName.trim() || newCarrierPin.length !== 4) {
@@ -187,7 +250,10 @@ export default function App() {
       round1Choice: [],
       round2Choice: [],
       ps3971_submitted: false,
-      seniority_order: newCarrierRank ? Number(newCarrierRank) : carriers.length + 1
+      seniority_order: newCarrierRank ? Number(newCarrierRank) : carriers.length + 1,
+      link_sent_at: null,
+      deadline_at: null,
+      status: 'pending'
     };
 
     const updated = [...carriers, newCarrier];
@@ -195,9 +261,7 @@ export default function App() {
 
     try {
       await supabase.from('carriers').insert([newCarrier]);
-    } catch (err) {
-      console.warn('Supabase offline sync skipped, saved locally.');
-    }
+    } catch (err) {}
 
     setNewCarrierName('');
     setNewCarrierPin('');
@@ -278,6 +342,10 @@ export default function App() {
       }
     }
 
+    const deadlineStr = currentCarrier.deadline_at 
+      ? new Date(currentCarrier.deadline_at).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      : 'N/A';
+
     const updatedCarriers = carriers.map(c => {
       if (c.id === currentCarrier.id) {
         return currentRound === 1 ? { ...c, round1Choice: selectedWeeks } : { ...c, round2Choice: selectedWeeks };
@@ -290,23 +358,15 @@ export default function App() {
     const updatePayload = currentRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks };
     try {
       await supabase.from('carriers').update(updatePayload).eq('id', currentCarrier.id);
-    } catch (err) {
-      console.warn('Cloud sync skipped, saved locally.');
-    }
+    } catch (err) {}
 
-    await triggerOfficerAlert(currentCarrier.name, currentRound, selectedWeeks);
+    await triggerOfficerAlert(currentCarrier.name, currentRound, selectedWeeks, deadlineStr);
 
     alert('Bid successfully submitted and locked!');
     setSelectedWeeks([]);
     setCurrentCarrier(null);
     setPinInput('');
     setSelectedCarrierId('');
-  };
-
-  const textCarrierDirectly = (carrier) => {
-    const link = window.location.origin + window.location.pathname;
-    const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! Submit your vacation picks here: ${link}`);
-    window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
   };
 
   const formatWeeksWithDates = (weekNums) => {
@@ -438,28 +498,41 @@ export default function App() {
               <tr style={{ background: '#003366', color: '#fff', textAlign: 'left', fontSize: '13px' }}>
                 <th style={{ padding: '10px' }}>Priority #</th>
                 <th style={{ padding: '10px' }}>Carrier Name</th>
-                <th style={{ padding: '10px' }}>Category</th>
-                <th style={{ padding: '10px' }}>Round 1 Selections</th>
-                <th style={{ padding: '10px' }}>Round 2 Selections</th>
+                <th style={{ padding: '10px' }}>Status / Deadline</th>
                 <th style={{ padding: '10px', textAlign: 'center' }}>PS 3971 Submitted</th>
-                <th style={{ padding: '10px' }}>Dispatch</th>
+                <th style={{ padding: '10px' }}>Steward Actions</th>
               </tr>
             </thead>
             <tbody>
               {sortedCarriers.map((c) => {
                 const isCurrentTurn = activeBiddingCarrier && activeBiddingCarrier.id === c.id;
-                const r1Formatted = formatWeeksWithDates(c.round1Choice);
-                const r2Formatted = formatWeeksWithDates(c.round2Choice);
+                const isBypassed = c.status === 'bypassed';
+                const hasFinished = currentRound === 1 ? (c.round1Choice?.length > 0) : (c.round2Choice?.length > 0);
+                
+                let deadlinePassed = false;
+                if (c.deadline_at && !hasFinished && !isBypassed) {
+                  deadlinePassed = new Date() > new Date(c.deadline_at);
+                }
 
                 return (
-                  <tr key={c.id} style={{ borderBottom: '1px solid #ddd', fontSize: '13px', background: isCurrentTurn ? '#fff9e6' : '#fff' }}>
+                  <tr key={c.id} style={{ borderBottom: '1px solid #ddd', fontSize: '13px', background: isCurrentTurn ? '#fff9e6' : isBypassed ? '#f8d7da' : '#fff' }}>
                     <td style={{ padding: '10px', fontWeight: 'bold', color: '#003366' }}>Priority #{c.seniority_order || '—'}</td>
                     <td style={{ padding: '10px', fontWeight: 'bold' }}>
                       {c.name} {isCurrentTurn && <span style={{ color: '#d9534f', fontSize: '11px' }}>(Up Now)</span>}
+                      {isBypassed && <span style={{ color: '#dc3545', fontSize: '11px' }}> [Bypassed]</span>}
                     </td>
-                    <td style={{ padding: '10px' }}>Cat {c.category}</td>
-                    <td style={{ padding: '10px' }}>{r1Formatted}</td>
-                    <td style={{ padding: '10px' }}>{r2Formatted}</td>
+                    <td style={{ padding: '10px', fontSize: '12px' }}>
+                      {hasFinished ? (
+                        <span style={{ color: '#28a745', fontWeight: 'bold' }}>✓ Completed</span>
+                      ) : c.deadline_at ? (
+                        <div>
+                          <span>Due: {new Date(c.deadline_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                          {deadlinePassed && <div style={{ color: '#dc3545', fontWeight: 'bold' }}>⚠️ 48hr Overdue!</div>}
+                        </div>
+                      ) : (
+                        <span style={{ color: '#666' }}>Link not sent</span>
+                      )}
+                    </td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>
                       <input 
                         type="checkbox" 
@@ -468,13 +541,21 @@ export default function App() {
                         style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                       />
                     </td>
-                    <td style={{ padding: '10px' }}>
+                    <td style={{ padding: '10px', display: 'flex', gap: '6px', alignItems: 'center' }}>
                       <button
-                        onClick={() => textCarrierDirectly(c)}
-                        style={{ background: '#28a745', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                        onClick={() => handleSendLinkAndStartTimer(c)}
+                        style={{ background: '#28a745', color: '#fff', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
                       >
-                        💬 Text Link
+                        💬 Send Link
                       </button>
+                      {deadlinePassed && !hasFinished && (
+                        <button
+                          onClick={() => handleBypassCarrier(c)}
+                          style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
+                        >
+                          ⚠️ Bypass
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -498,23 +579,6 @@ export default function App() {
             />
           </div>
 
-          <div style={{ marginBottom: '20px', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #ddd' }}>
-            <h4 style={{ margin: '0 0 8px 0', color: '#003366' }}>Manual Slot Quota Adjustments Per Week</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
-              {CALENDAR_WEEKS.map(w => (
-                <div key={w.weekNum} style={{ background: '#f9f9f9', padding: '6px', border: '1px solid #ddd', borderRadius: '4px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 'bold' }}>Wk {w.weekNum} ({w.dateString.slice(0,6)})</div>
-                  <input 
-                    type="number" 
-                    value={customSlots[w.weekNum] !== undefined ? customSlots[w.weekNum] : getSlotsForWeek(w)}
-                    onChange={(e) => setCustomSlots({ ...customSlots, [w.weekNum]: Number(e.target.value) })}
-                    style={{ width: '50px', textAlign: 'center', marginTop: '4px' }}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
           <form onSubmit={handleAddCarrier} style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
             <input type="text" placeholder="Carrier Name" value={newCarrierName} onChange={(e) => setNewCarrierName(e.target.value)} style={{ padding: '6px', flex: 1 }} />
             <select value={newCarrierCategory} onChange={(e) => setNewCarrierCategory(Number(e.target.value))} style={{ padding: '6px' }}>
@@ -533,7 +597,7 @@ export default function App() {
             {sortedCarriers.map((c) => (
               <li key={c.id} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <strong style={{ minWidth: '120px' }}>{c.name}</strong>
-                <span>Bid Priority Rank:</span>
+                <span>Priority Rank:</span>
                 <input 
                   type="number" 
                   value={c.seniority_order || 1} 
