@@ -118,16 +118,21 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // BULLETPROOF URL TOKEN LOOKUP
+  // BULLETPROOF MULTI-FORMAT URL TOKEN LOOKUP
   useEffect(() => {
     if (!isDataLoaded) return;
 
     const params = new URLSearchParams(window.location.search);
-    const targetId = params.get('carrierId');
+    const targetId = params.get('carrierId') || params.get('id');
 
     if (targetId) {
       const cleanTargetId = String(targetId).trim();
-      const found = carriers.find(c => String(c.id).trim() === cleanTargetId);
+      // Look up by exact ID, partial ID match, or phone number match
+      const found = carriers.find(c => 
+        String(c.id).trim() === cleanTargetId || 
+        String(c.phone).trim() === cleanTargetId ||
+        String(c.id).trim().includes(cleanTargetId)
+      );
       
       if (found) {
         const hasFinishedRound = currentRound === 1 
@@ -144,7 +149,19 @@ export default function App() {
         setCurrentCarrier(found);
         setSelectedWeeks([]);
       } else {
-        setPortalMessage(`Carrier link token not recognized in active database.`);
+        setPortalMessage(`Token recognized, syncing live database record...`);
+        // Force a quick secondary Supabase fetch just in case local state lagged
+        supabase.from('carriers').select('*').then(({ data }) => {
+          if (data) {
+            const freshFound = data.find(c => String(c.id).trim() === cleanTargetId);
+            if (freshFound) {
+              setPortalMessage('');
+              setCurrentCarrier(freshFound);
+            } else {
+              setPortalMessage(`Carrier link token not recognized in active database.`);
+            }
+          }
+        });
       }
     }
   }, [isDataLoaded, carriers, currentRound, isStewardUnlocked]);
@@ -205,16 +222,12 @@ export default function App() {
       }).eq('id', carrier.id);
     } catch (err) {}
 
-    // AUTOMATICALLY BUILDS LINK FROM YOUR CURRENT BROWSER ADDRESS
+    // Fully automated base domain generator that works cleanly across all mobile devices
     const currentDomain = window.location.origin.includes('vercel.com') 
       ? window.location.href.split('/?')[0].split('#')[0] 
       : window.location.origin;
-      
-    const cleanBase = currentDomain.includes('vercel.com') && currentDomain.includes('nalc') 
-      ? currentDomain 
-      : window.location.origin;
 
-    const portalLink = `${cleanBase}/?carrierId=${carrier.id}`;
+    const portalLink = `${currentDomain}/?carrierId=${carrier.id}`;
 
     const deadlineFormatted = deadline.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! You have until ${deadlineFormatted} to submit your picks: ${portalLink}`);
