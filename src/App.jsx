@@ -83,16 +83,19 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isStewardView, setIsStewardView] = useState(true);
 
-  // Live Supabase sync on initial page mount
+  // Sync data from Supabase on mount and normalize column mappings
   useEffect(() => {
     const syncData = async () => {
       try {
-        const { data, error } = await supabase
-          .from('carriers')
-          .select('*')
-          .order('seniority_order', { ascending: true });
+        const { data, error } = await supabase.from('carriers').select('*').order('seniority_order', { ascending: true });
         if (!error && data && data.length > 0) {
-          setCarriers(data);
+          // Normalize column names to ensure round1Choice/round2Choice are always standard in React state
+          const normalized = data.map(c => ({
+            ...c,
+            round1Choice: c.round1Choice || c.round_1_choice || [],
+            round2Choice: c.round2Choice || c.round_2_choice || []
+          }));
+          setCarriers(normalized);
         }
       } catch (err) {
         console.warn('Network sync failed, using default fallback');
@@ -154,8 +157,12 @@ export default function App() {
     try {
       const { data, error } = await supabase.from('carriers').select('*');
       if (!error && data && data.length > 0) {
-        latestCarriers = data;
-        setCarriers(data);
+        latestCarriers = data.map(c => ({
+          ...c,
+          round1Choice: c.round1Choice || c.round_1_choice || [],
+          round2Choice: c.round2Choice || c.round_2_choice || []
+        }));
+        setCarriers(latestCarriers);
       }
     } catch (err) {}
 
@@ -342,21 +349,34 @@ export default function App() {
     setSelectedWeeks([...selectedWeeks, weekNum].sort((a, b) => a - b));
   };
 
-  // CLEAN, DIRECT DATABASE SUBMIT
+  // ROBUST DATABASE WRITE: Updates both camelCase and snake_case schemas and targets by ID or Name
   const handleSubmitBid = async () => {
     if (selectedWeeks.length === 0 || !currentCarrier) return;
 
     const hasCompletedR1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
     const activeRound = hasCompletedR1 ? 2 : 1;
+    
+    // Provide both naming formats so Supabase accepts it regardless of SQL schema column definitions
     const fieldToUpdate = activeRound === 1 
-      ? { round1Choice: selectedWeeks } 
-      : { round2Choice: selectedWeeks };
+      ? { round1Choice: selectedWeeks, round_1_choice: selectedWeeks } 
+      : { round2Choice: selectedWeeks, round_2_choice: selectedWeeks };
 
     try {
-      const { error } = await supabase
+      // Try updating by primary key ID first
+      let { error, count } = await supabase
         .from('carriers')
-        .update(fieldToUpdate)
+        .update(fieldToUpdate, { count: 'exact' })
         .eq('id', currentCarrier.id);
+
+      // Fallback update by exact name string if ID match was blocked or skipped
+      if (error || count === 0) {
+        const nameResult = await supabase
+          .from('carriers')
+          .update(fieldToUpdate, { count: 'exact' })
+          .eq('name', currentCarrier.name.trim());
+        error = nameResult.error;
+        count = nameResult.count;
+      }
 
       if (error) {
         alert(`Supabase Error: ${error.message}`);
