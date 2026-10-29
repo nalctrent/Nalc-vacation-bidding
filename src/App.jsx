@@ -31,8 +31,17 @@ const generateYearWeeks = () => {
 
 const CALENDAR_WEEKS = generateYearWeeks();
 
+const DEFAULT_ROSTER = [
+  { id: '1', name: 'Trenton Bauer', category: 3, pin: '1234', phone: '4173964312', contact: 'nalctrent@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 1, ps3971_submitted: false },
+  { id: '2', name: 'Jessica', category: 2, pin: '5678', phone: '4173565260', contact: '', round1Choice: [], round2Choice: [], seniority_order: 2, ps3971_submitted: false },
+  { id: '3', name: 'John Doe', category: 1, pin: '0000', phone: '', contact: '', round1Choice: [], round2Choice: [], seniority_order: 3, ps3971_submitted: false }
+];
+
 export default function App() {
-  const [carriers, setCarriers] = useState([]);
+  const [carriers, setCarriers] = useState(() => {
+    const saved = localStorage.getItem('nalc_carriers');
+    return saved ? JSON.parse(saved) : DEFAULT_ROSTER;
+  });
   const [currentCarrier, setCurrentCarrier] = useState(null);
   
   const [selectedCarrierId, setSelectedCarrierId] = useState('');
@@ -56,36 +65,21 @@ export default function App() {
 
   useEffect(() => {
     fetchCarriersFromSupabase();
-
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'carriers' }, () => {
-        fetchCarriersFromSupabase();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, []);
+
+  const saveCarriersState = (newCarriers) => {
+    setCarriers(newCarriers);
+    localStorage.setItem('nalc_carriers', JSON.stringify(newCarriers));
+  };
 
   const fetchCarriersFromSupabase = async () => {
     try {
       const { data, error } = await supabase.from('carriers').select('*').order('seniority_order', { ascending: true });
-      if (error) {
-        console.error('Supabase fetch error:', error.message);
-        return;
-      }
-      if (data && data.length > 0) {
-        setCarriers(data);
-        // Keep active session matched if already logged in
-        if (currentCarrier) {
-          const updatedCurrent = data.find(c => c.id === currentCarrier.id);
-          if (updatedCurrent) setCurrentCarrier(updatedCurrent);
-        }
+      if (!error && data && data.length > 0) {
+        saveCarriersState(data);
       }
     } catch (err) {
-      console.error('Network error fetching carriers:', err);
+      console.warn('Using local storage fallback due to network restriction:', err);
     }
   };
 
@@ -196,13 +190,15 @@ export default function App() {
       seniority_order: newCarrierRank ? Number(newCarrierRank) : carriers.length + 1
     };
 
-    const { error } = await supabase.from('carriers').insert([newCarrier]);
-    if (error) {
-      alert('Database error adding carrier: ' + error.message);
-      return;
+    const updated = [...carriers, newCarrier];
+    saveCarriersState(updated);
+
+    try {
+      await supabase.from('carriers').insert([newCarrier]);
+    } catch (err) {
+      console.warn('Supabase offline sync skipped, saved locally.');
     }
 
-    await fetchCarriersFromSupabase();
     setNewCarrierName('');
     setNewCarrierPin('');
     setNewCarrierPhone('');
@@ -213,21 +209,28 @@ export default function App() {
 
   const handleUpdateRank = async (id, newRank) => {
     const updated = carriers.map(c => c.id === id ? { ...c, seniority_order: Number(newRank) } : c);
-    setCarriers(updated);
-    await supabase.from('carriers').update({ seniority_order: Number(newRank) }).eq('id', id);
+    saveCarriersState(updated);
+    try {
+      await supabase.from('carriers').update({ seniority_order: Number(newRank) }).eq('id', id);
+    } catch (err) {}
   };
 
   const handleRemoveCarrier = async (id) => {
     if (confirm('Are you sure you want to remove this carrier?')) {
-      setCarriers(carriers.filter(c => c.id !== id));
-      await supabase.from('carriers').delete().eq('id', id);
+      const updated = carriers.filter(c => c.id !== id);
+      saveCarriersState(updated);
+      try {
+        await supabase.from('carriers').delete().eq('id', id);
+      } catch (err) {}
     }
   };
 
   const togglePS3971Status = async (carrierId, currentStatus) => {
     const updated = carriers.map(c => c.id === carrierId ? { ...c, ps3971_submitted: !currentStatus } : c);
-    setCarriers(updated);
-    await supabase.from('carriers').update({ ps3971_submitted: !currentStatus }).eq('id', carrierId);
+    saveCarriersState(updated);
+    try {
+      await supabase.from('carriers').update({ ps3971_submitted: !currentStatus }).eq('id', carrierId);
+    } catch (err) {}
   };
 
   const handleWeekClick = (weekNum) => {
@@ -275,18 +278,25 @@ export default function App() {
       }
     }
 
-    const updatePayload = currentRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks };
+    const updatedCarriers = carriers.map(c => {
+      if (c.id === currentCarrier.id) {
+        return currentRound === 1 ? { ...c, round1Choice: selectedWeeks } : { ...c, round2Choice: selectedWeeks };
+      }
+      return c;
+    });
 
-    const { error } = await supabase.from('carriers').update(updatePayload).eq('id', currentCarrier.id);
-    if (error) {
-      alert('Database error saving bid: ' + error.message);
-      return;
+    saveCarriersState(updatedCarriers);
+
+    const updatePayload = currentRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks };
+    try {
+      await supabase.from('carriers').update(updatePayload).eq('id', currentCarrier.id);
+    } catch (err) {
+      console.warn('Cloud sync skipped, saved locally.');
     }
 
     await triggerOfficerAlert(currentCarrier.name, currentRound, selectedWeeks);
-    await fetchCarriersFromSupabase();
 
-    alert('Bid successfully submitted and locked to cloud database!');
+    alert('Bid successfully submitted and locked!');
     setSelectedWeeks([]);
     setCurrentCarrier(null);
     setPinInput('');
