@@ -105,7 +105,7 @@ export default function App() {
     syncData();
   }, []);
 
-  // Check persistent logged-in session
+  // Check persistent logged-in session, validating live against Supabase carrier data
   useEffect(() => {
     if (!isDataLoaded) return;
     const savedId = localStorage.getItem('nalc_logged_in_carrier');
@@ -136,13 +136,25 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  const handleCarrierLogin = (e) => {
+  const handleCarrierLogin = async (e) => {
     e.preventDefault();
     if (!loginCarrierId) {
       alert('Please select your name.');
       return;
     }
-    const found = carriers.find(c => String(c.id) === String(loginCarrierId));
+
+    // ALWAYS FETCH FRESH DATA FROM SUPABASE ON LOGIN TO PREVENT STALE CACHE LOCKOUTS
+    let latestCarriers = carriers;
+    try {
+      const { data, error } = await supabase.from('carriers').select('*');
+      if (!error && data && data.length > 0) {
+        latestCarriers = data;
+        setCarriers(data);
+        localStorage.setItem('nalc_carriers', JSON.stringify(data));
+      }
+    } catch (err) {}
+
+    const found = latestCarriers.find(c => String(c.id) === String(loginCarrierId));
     if (!found) {
       alert('Carrier not found.');
       return;
@@ -154,6 +166,7 @@ export default function App() {
       return;
     }
 
+    // Check completion status using the fresh live database record
     const hasFinishedRound = currentRound === 1 
       ? (found.round1Choice && found.round1Choice.length > 0)
       : (found.round2Choice && found.round2Choice.length > 0);
