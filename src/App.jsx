@@ -118,21 +118,26 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // BULLETPROOF MULTI-FORMAT URL TOKEN LOOKUP
+  // BULLETPROOF HASH-BASED ROUTING & TOKEN MATCHING
   useEffect(() => {
     if (!isDataLoaded) return;
 
-    const params = new URLSearchParams(window.location.search);
-    const targetId = params.get('carrierId') || params.get('id');
+    // Check hash route first (e.g., #/bid/2 or #carrierId=2), fallback to query params
+    const hash = window.location.hash;
+    let targetId = null;
+
+    if (hash.includes('/bid/')) {
+      targetId = hash.split('/bid/')[1];
+    } else if (hash.includes('carrierId=')) {
+      targetId = new URLSearchParams(hash.replace('#', '?')).get('carrierId');
+    } else {
+      const params = new URLSearchParams(window.location.search);
+      targetId = params.get('carrierId') || params.get('id');
+    }
 
     if (targetId) {
       const cleanTargetId = String(targetId).trim();
-      // Look up by exact ID, partial ID match, or phone number match
-      const found = carriers.find(c => 
-        String(c.id).trim() === cleanTargetId || 
-        String(c.phone).trim() === cleanTargetId ||
-        String(c.id).trim().includes(cleanTargetId)
-      );
+      const found = carriers.find(c => String(c.id).trim() === cleanTargetId);
       
       if (found) {
         const hasFinishedRound = currentRound === 1 
@@ -149,8 +154,6 @@ export default function App() {
         setCurrentCarrier(found);
         setSelectedWeeks([]);
       } else {
-        setPortalMessage(`Token recognized, syncing live database record...`);
-        // Force a quick secondary Supabase fetch just in case local state lagged
         supabase.from('carriers').select('*').then(({ data }) => {
           if (data) {
             const freshFound = data.find(c => String(c.id).trim() === cleanTargetId);
@@ -158,7 +161,7 @@ export default function App() {
               setPortalMessage('');
               setCurrentCarrier(freshFound);
             } else {
-              setPortalMessage(`Carrier link token not recognized in active database.`);
+              setPortalMessage(`Invalid or expired link token. Please use your personalized text message link from your shop steward.`);
             }
           }
         });
@@ -199,7 +202,8 @@ export default function App() {
   };
 
   const handleManualBidStart = (carrier) => {
-    window.location.search = `?carrierId=${carrier.id}`;
+    window.location.hash = `#/bid/${carrier.id}`;
+    window.location.reload();
   };
 
   const handleSendLinkAndStartTimer = async (carrier) => {
@@ -222,12 +226,12 @@ export default function App() {
       }).eq('id', carrier.id);
     } catch (err) {}
 
-    // Fully automated base domain generator that works cleanly across all mobile devices
+    // Generates a clean hash link that mobile browsers and text apps never cache or strip
     const currentDomain = window.location.origin.includes('vercel.com') 
-      ? window.location.href.split('/?')[0].split('#')[0] 
+      ? window.location.href.split('/#')[0].split('/?')[0] 
       : window.location.origin;
 
-    const portalLink = `${currentDomain}/?carrierId=${carrier.id}`;
+    const portalLink = `${currentDomain}/#/bid/${carrier.id}`;
 
     const deadlineFormatted = deadline.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! You have until ${deadlineFormatted} to submit your picks: ${portalLink}`);
@@ -322,7 +326,8 @@ export default function App() {
     } catch (err) {}
 
     alert(`Round ${activeRound} selections successfully submitted for ${currentCarrier.name}!`);
-    window.location.href = window.location.pathname;
+    window.location.hash = '';
+    window.location.reload();
   };
 
   const formatWeeksWithDates = (weekNums) => {
@@ -413,7 +418,7 @@ export default function App() {
         </div>
       ) : null}
 
-      {/* ROSTER & QUOTA SETTINGS ADMIN PANEL WITH WEEKLY SLOT OVERRIDES */}
+      {/* ROSTER & QUOTA SETTINGS ADMIN PANEL */}
       {isStewardUnlocked && isAdminOpen && (
         <div className="no-print" style={{ background: '#f4f4f4', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ccc' }}>
           <h3>Staffing & Leave Quota Settings</h3>
@@ -428,9 +433,6 @@ export default function App() {
           </div>
 
           <h4 style={{ margin: '15px 0 8px 0' }}>Manual Weekly Leave Slot Overrides</h4>
-          <p style={{ fontSize: '12px', color: '#555', marginBottom: '10px' }}>
-            Customize specific weeks below if needed (leave blank to use the default office percentage calculation).
-          </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', maxHeight: '220px', overflowY: 'auto', background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #ccc', marginBottom: '20px' }}>
             {CALENDAR_WEEKS.map(w => {
               const defaultSlots = Math.max(1, Math.round(totalEmployees * (w.isPrimeTime ? 0.14 : 0.11)));
@@ -488,16 +490,13 @@ export default function App() {
         </div>
       )}
 
-      {/* SECURE LANDING */}
+      {/* SECURE LANDING (STRICT TOKEN-ONLY) */}
       {!currentCarrier && !isStewardUnlocked && !portalMessage ? (
         <div className="no-print" style={{ background: '#fff', padding: '30px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto', textAlign: 'center' }}>
           <h2 style={{ color: '#003366', marginTop: 0 }}>Secure Bidding Portal</h2>
           <p style={{ fontSize: '14px', color: '#555', lineHeight: '1.5' }}>
-            Please use your personalized SMS text message link sent by your shop steward to access your vacation bidding calendar.
+            Please use your personalized text message link sent by your shop steward to access your secure vacation bidding calendar.
           </p>
-          <div style={{ marginTop: '20px', padding: '12px', background: '#f8f9fa', borderRadius: '6px', fontSize: '13px', color: '#666' }}>
-            Current Bidding Turn: <strong style={{ color: '#d9534f' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'All Completed'}</strong>
-          </div>
         </div>
       ) : null}
 
@@ -509,7 +508,7 @@ export default function App() {
               <h3 style={{ margin: 0, color: '#155724' }}>Authenticated as: {currentCarrier.name} (Priority #{currentCarrier.seniority_order})</h3>
               <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>Category {currentCarrier.category} — Selected: {selectedWeeks.join(', ') || 'None'}</p>
             </div>
-            <button onClick={() => { window.location.href = window.location.pathname; }} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Exit</button>
+            <button onClick={() => { window.location.hash = ''; window.location.reload(); }} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Exit</button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '8px', marginBottom: '20px' }}>
