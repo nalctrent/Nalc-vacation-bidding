@@ -106,10 +106,19 @@ export default function App() {
     if (savedId) {
       const found = carriers.find(c => String(c.id) === String(savedId));
       if (found) {
-        setCurrentCarrier(found);
+        // If they already finished this round, clear auto-login loop trap
+        const globalRound = carriers.every(c => c.round1Choice && c.round1Choice.length > 0) ? 2 : 1;
+        const finishedCurrent = globalRound === 1 ? (found.round1Choice && found.round1Choice.length > 0) : (found.round2Choice && found.round2Choice.length > 0);
+        
+        if (finishedCurrent && !isStewardUnlocked) {
+          localStorage.removeItem('nalc_logged_in_carrier');
+          setCurrentCarrier(null);
+        } else {
+          setCurrentCarrier(found);
+        }
       }
     }
-  }, [isDataLoaded, carriers]);
+  }, [isDataLoaded, carriers, isStewardUnlocked]);
 
   const saveCustomSlotsState = (newSlots) => {
     setCustomSlots(newSlots);
@@ -373,6 +382,9 @@ export default function App() {
       console.warn('Email notification failed to send.');
     }
 
+    // Clear local storage login session immediately to prevent loop traps
+    localStorage.removeItem('nalc_logged_in_carrier');
+
     const updated = carriers.map(c => {
       if (String(c.id) === String(currentCarrier.id)) {
         return activeRound === 1 ? { ...c, round1Choice: selectedWeeks } : { ...c, round2Choice: selectedWeeks };
@@ -381,10 +393,10 @@ export default function App() {
     });
 
     saveCarriersState(updated);
-    localStorage.removeItem('nalc_logged_in_carrier');
+    setCurrentCarrier(null);
+    setSelectedWeeks([]);
     
     alert(`Round ${activeRound} selections successfully submitted for ${currentCarrier.name}!`);
-    setCurrentCarrier(null);
     window.location.reload();
   };
 
@@ -632,7 +644,7 @@ export default function App() {
                   <div style={{ fontWeight: 'bold', fontSize: '13px' }}>Week {week.weekNum}</div>
                   <div style={{ fontSize: '11px', color: isSelected ? '#e0e0e0' : '#555' }}>{week.dateString}</div>
                   <div style={{ fontSize: '10px', fontWeight: 'bold', color: isSelected ? '#ffcc00' : (week.isPrimeTime ? '#b8860b' : '#666') }}>{week.isPrimeTime ? '☀️ Prime' : 'Standard'}</div>
-                  <div style={{ fontSize: '11px', marginTop: '2px' }}>Slots: {booked}/{maxSlots}</div>
+                  <div style={{ fontSize: '11px', marginTop: '2px' => slots: {booked}/{maxSlots}</div>
                 </button>
               );
             })}
