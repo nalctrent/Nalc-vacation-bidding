@@ -66,7 +66,11 @@ export default function App() {
 
   // Steward / Admin Settings state
   const [totalEmployees, setTotalEmployees] = useState(30);
-  const [customSlots, setCustomSlots] = useState({});
+  const [customSlots, setCustomSlots] = useState(() => {
+    const saved = localStorage.getItem('nalc_custom_slots');
+    return saved ? JSON.parse(saved) : {};
+  });
+
   const [newCarrierName, setNewCarrierName] = useState('');
   const [newCarrierCategory, setNewCarrierCategory] = useState(1);
   const [newCarrierPhone, setNewCarrierPhone] = useState('');
@@ -76,7 +80,7 @@ export default function App() {
   const [stewardPinInput, setStewardPinInput] = useState('');
   const [isStewardUnlocked, setIsStewardUnlocked] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
-  const [isStewardView, setIsStewardView] = useState(true); // Default to master board when unlocked
+  const [isStewardView, setIsStewardView] = useState(true);
 
   useEffect(() => {
     const syncData = async () => {
@@ -94,6 +98,17 @@ export default function App() {
     };
     syncData();
   }, []);
+
+  const saveCustomSlotsState = (newSlots) => {
+    setCustomSlots(newSlots);
+    localStorage.setItem('nalc_custom_slots', JSON.stringify(newSlots));
+  };
+
+  const handleCustomSlotChange = (weekNum, val) => {
+    const num = parseInt(val, 10);
+    const updated = { ...customSlots, [weekNum]: isNaN(num) ? '' : num };
+    saveCustomSlotsState(updated);
+  };
 
   const sortedCarriers = [...carriers].sort((a, b) => (a.seniority_order || 999) - (b.seniority_order || 999));
   const allRound1Complete = sortedCarriers.length > 0 && sortedCarriers.every(c => c.round1Choice && c.round1Choice.length > 0);
@@ -137,7 +152,9 @@ export default function App() {
   };
 
   const getSlotsForWeek = (weekObj) => {
-    if (customSlots[weekObj.weekNum] !== undefined) return customSlots[weekObj.weekNum];
+    if (customSlots[weekObj.weekNum] !== undefined && customSlots[weekObj.weekNum] !== '') {
+      return Number(customSlots[weekObj.weekNum]);
+    }
     const rate = weekObj.isPrimeTime ? 0.14 : 0.11;
     return Math.max(1, Math.round(totalEmployees * rate));
   };
@@ -190,13 +207,6 @@ export default function App() {
     const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! You have until ${deadlineFormatted} to submit your picks: ${portalLink}`);
     
     window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
-  };
-
-  const handleBypassCarrier = async (carrierToBypass) => {
-    if (!confirm(`Bypass ${carrierToBypass.name}?`)) return;
-    const updated = carriers.map(c => c.id === carrierToBypass.id ? { ...c, status: 'bypassed' } : c);
-    saveCarriersState(updated);
-    try { await supabase.from('carriers').update({ status: 'bypassed' }).eq('id', carrierToBypass.id); } catch (err) {}
   };
 
   const handleAddCarrier = async (e) => {
@@ -376,18 +386,40 @@ export default function App() {
         </div>
       ) : null}
 
-      {/* ROSTER & QUOTA SETTINGS ADMIN PANEL */}
+      {/* ROSTER & QUOTA SETTINGS ADMIN PANEL WITH WEEKLY SLOT OVERRIDES */}
       {isStewardUnlocked && isAdminOpen && (
         <div className="no-print" style={{ background: '#f4f4f4', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ccc' }}>
           <h3>Staffing & Leave Quota Settings</h3>
-          <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <label style={{ fontSize: '14px', fontWeight: 'bold' }}>Total Office Carriers (for 11%/14% calculations):</label>
+          <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <label style={{ fontSize: '14px', fontWeight: 'bold' }}>Total Office Carriers (Base 11%/14% Calculator):</label>
             <input 
               type="number" 
               value={totalEmployees} 
               onChange={(e) => setTotalEmployees(Number(e.target.value))}
               style={{ padding: '4px 8px', width: '60px', borderRadius: '4px', border: '1px solid #ccc' }}
             />
+          </div>
+
+          <h4 style={{ margin: '15px 0 8px 0' }}>Manual Weekly Leave Slot Overrides</h4>
+          <p style={{ fontSize: '12px', color: '#555', marginBottom: '10px' }}>
+            Customize specific weeks below if needed (leave blank to use the default office percentage calculation).
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', maxHeight: '220px', overflowY: 'auto', background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #ccc', marginBottom: '20px' }}>
+            {CALENDAR_WEEKS.map(w => {
+              const defaultSlots = Math.max(1, Math.round(totalEmployees * (w.isPrimeTime ? 0.14 : 0.11)));
+              return (
+                <div key={w.weekNum} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', padding: '4px', borderBottom: '1px solid #eee' }}>
+                  <span>Wk {w.weekNum} ({w.isPrimeTime ? 'Prime' : 'Std'}):</span>
+                  <input
+                    type="number"
+                    placeholder={defaultSlots}
+                    value={customSlots[w.weekNum] !== undefined ? customSlots[w.weekNum] : ''}
+                    onChange={(e) => handleCustomSlotChange(w.weekNum, e.target.value)}
+                    style={{ width: '45px', textAlign: 'center', padding: '2px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                </div>
+              );
+            })}
           </div>
 
           <h4 style={{ margin: '15px 0 8px 0' }}>Add New Carrier</h4>
