@@ -107,7 +107,7 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // AUTO-LOGIN VIA PERSONALIZED URL PARAMETER (?carrierId=xyz) WITH INSTANT SESSION SWITCH & URL CLEANUP
+  // DIRECT AUTO-LOGIN VIA URL PARAMETER WITH FORCE OVERRIDE
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const targetId = params.get('carrierId');
@@ -130,11 +130,11 @@ export default function App() {
           return;
         }
 
-        // Instantly switch session to target carrier
+        // Force session override to auto-log in the target carrier immediately
         setCurrentCarrier(found);
         setSelectedWeeks([]);
 
-        // Clean up address bar so link parameters don't linger in browser history
+        // Clean up URL parameter so history stays clean
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
@@ -196,7 +196,6 @@ export default function App() {
       return;
     }
 
-    // Bypass turn lock if Steward Mode is unlocked for manual bidding
     if (!isStewardUnlocked && activeBiddingCarrier && activeBiddingCarrier.id !== found.id) {
       alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid in Round ${currentRound}. You cannot bid out of order.`);
       return;
@@ -215,14 +214,12 @@ export default function App() {
     setSelectedWeeks([]);
   };
 
-  // Steward Action: Manual bid entry on behalf of carrier
   const handleManualBidStart = (carrier) => {
     setCurrentCarrier(carrier);
     setSelectedWeeks([]);
     setIsStewardView(false);
   };
 
-  // Steward Action: Send personalized link & start 48-hour clock
   const handleSendLinkAndStartTimer = async (carrier) => {
     const now = new Date();
     const deadline = calculateBiddingDeadline(now);
@@ -250,7 +247,6 @@ export default function App() {
     window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
   };
 
-  // Steward Action: Bypass overdue carrier
   const handleBypassCarrier = async (carrierToBypass) => {
     if (!confirm(`Are you sure you want to bypass ${carrierToBypass.name} for failing to respond within 48 hours?`)) return;
 
@@ -337,7 +333,6 @@ export default function App() {
       return;
     }
 
-    // Determine if this specific carrier is bidding Round 1 or Round 2
     const carrierHasCompletedRound1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
     const maxWeeksAllowed = carrierHasCompletedRound1 
       ? 1 
@@ -372,7 +367,6 @@ export default function App() {
     const carrierHasCompletedRound1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
     const activeRoundForCarrier = carrierHasCompletedRound1 ? 2 : 1;
 
-    // LMOU Rule Check for Round 1
     if (activeRoundForCarrier === 1 && selectedWeeks.length === 3) {
       const [w1, w2, w3] = selectedWeeks;
       const isAllConsecutive = (w2 === w1 + 1 && w3 === w2 + 1);
@@ -411,7 +405,7 @@ export default function App() {
 
     alert(`Round ${activeRoundForCarrier} bid successfully submitted and locked for ${currentCarrier.name}!`);
     
-    // Clear selection state and logout carrier
+    // Explicitly reset carrier session and selected weeks
     setSelectedWeeks([]);
     setCurrentCarrier(null);
     setSelectedCarrierId('');
@@ -664,7 +658,7 @@ export default function App() {
         </div>
       )}
 
-      {/* CARRIER FALLBACK / MANUAL LOGIN SCREEN */}
+      {/* FALLBACK MANUAL SELECTOR (ONLY SHOWN IF DIRECT LINK WAS NOT USED) */}
       {!currentCarrier ? (
         <div className="no-print" style={{ background: '#fff', padding: '24px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto' }}>
           <h2 style={{ color: '#003366', marginTop: 0 }}>Carrier Portal Login</h2>
