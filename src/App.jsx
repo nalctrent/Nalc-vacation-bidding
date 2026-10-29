@@ -48,9 +48,9 @@ const generateYearWeeks = () => {
 const CALENDAR_WEEKS = generateYearWeeks();
 
 const DEFAULT_ROSTER = [
-  { id: '1', name: 'Trenton Bauer', category: 3, phone: '4173964312', contact: 'nalctrent@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 1, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'active' },
-  { id: '2', name: 'Jessica', category: 2, phone: '4173565260', contact: 'Jessica.branch366@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 2, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' },
-  { id: '3', name: 'John Doe', category: 1, phone: '', contact: '', round1Choice: [], round2Choice: [], seniority_order: 3, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' }
+  { id: '1', name: 'Trenton Bauer', category: 3, phone: '4173964312', pin: '4312', contact: 'nalctrent@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 1, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'active' },
+  { id: '2', name: 'Jessica', category: 2, phone: '4173565260', pin: '5260', contact: 'Jessica.branch366@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 2, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' },
+  { id: '3', name: 'John Doe', category: 1, phone: '', pin: '1234', contact: '', round1Choice: [], round2Choice: [], seniority_order: 3, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' }
 ];
 
 export default function App() {
@@ -64,6 +64,10 @@ export default function App() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [portalMessage, setPortalMessage] = useState('');
 
+  // Login Screen states
+  const [loginCarrierId, setLoginCarrierId] = useState('');
+  const [loginPinInput, setLoginPinInput] = useState('');
+
   // Steward / Admin Settings state
   const [totalEmployees, setTotalEmployees] = useState(30);
   const [customSlots, setCustomSlots] = useState(() => {
@@ -74,6 +78,7 @@ export default function App() {
   const [newCarrierName, setNewCarrierName] = useState('');
   const [newCarrierCategory, setNewCarrierCategory] = useState(1);
   const [newCarrierPhone, setNewCarrierPhone] = useState('');
+  const [newCarrierPin, setNewCarrierPin] = useState('');
   const [newCarrierContact, setNewCarrierContact] = useState('');
   const [newCarrierRank, setNewCarrierRank] = useState('');
 
@@ -99,6 +104,18 @@ export default function App() {
     syncData();
   }, []);
 
+  // Check persistent logged-in session
+  useEffect(() => {
+    if (!isDataLoaded) return;
+    const savedId = localStorage.getItem('nalc_logged_in_carrier');
+    if (savedId) {
+      const found = carriers.find(c => String(c.id) === String(savedId));
+      if (found) {
+        setCurrentCarrier(found);
+      }
+    }
+  }, [isDataLoaded, carriers]);
+
   const saveCustomSlotsState = (newSlots) => {
     setCustomSlots(newSlots);
     localStorage.setItem('nalc_custom_slots', JSON.stringify(newSlots));
@@ -118,54 +135,39 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // STANDARD QUERY PARAMETER ROUTING WITH PERSISTENT STORAGE
-  useEffect(() => {
-    if (!isDataLoaded) return;
-
-    const params = new URLSearchParams(window.location.search);
-    let targetId = params.get('carrierId') || params.get('id');
-
-    // If URL has the token, save it to localStorage so mobile browser refreshes don't lose it
-    if (targetId) {
-      localStorage.setItem('nalc_active_token', targetId);
-    } else {
-      // Fallback to saved session token if the mobile browser stripped parameters on reload
-      targetId = localStorage.getItem('nalc_active_token');
+  const handleCarrierLogin = (e) => {
+    e.preventDefault();
+    if (!loginCarrierId) {
+      alert('Please select your name.');
+      return;
+    }
+    const found = carriers.find(c => String(c.id) === String(loginCarrierId));
+    if (!found) {
+      alert('Carrier not found.');
+      return;
     }
 
-    if (targetId) {
-      const cleanTargetId = String(targetId).trim();
-      const found = carriers.find(c => String(c.id).trim() === cleanTargetId);
-      
-      if (found) {
-        const hasFinishedRound = currentRound === 1 
-          ? (found.round1Choice && found.round1Choice.length > 0)
-          : (found.round2Choice && found.round2Choice.length > 0);
-
-        if (hasFinishedRound && !isStewardUnlocked) {
-          setPortalMessage(`${found.name}, you have already completed your selections for Round ${currentRound}. Thank you!`);
-          setCurrentCarrier(null);
-          return;
-        }
-
-        setPortalMessage('');
-        setCurrentCarrier(found);
-        setSelectedWeeks([]);
-      } else {
-        supabase.from('carriers').select('*').then(({ data }) => {
-          if (data) {
-            const freshFound = data.find(c => String(c.id).trim() === cleanTargetId);
-            if (freshFound) {
-              setPortalMessage('');
-              setCurrentCarrier(freshFound);
-            } else {
-              setPortalMessage(`Invalid or expired link token. Please use your personalized text message link from your shop steward.`);
-            }
-          }
-        });
-      }
+    // Default PIN fallback if not set is last 4 of phone or '1234'
+    const expectedPin = found.pin || (found.phone ? found.phone.slice(-4) : '1234');
+    if (loginPinInput.trim() !== expectedPin) {
+      alert('Incorrect PIN. Please check with your shop steward if you forgot your PIN.');
+      return;
     }
-  }, [isDataLoaded, carriers, currentRound, isStewardUnlocked]);
+
+    const hasFinishedRound = currentRound === 1 
+      ? (found.round1Choice && found.round1Choice.length > 0)
+      : (found.round2Choice && found.round2Choice.length > 0);
+
+    if (hasFinishedRound && !isStewardUnlocked) {
+      setPortalMessage(`${found.name}, you have already completed your selections for Round ${currentRound}. Thank you!`);
+      return;
+    }
+
+    localStorage.setItem('nalc_logged_in_carrier', found.id);
+    setCurrentCarrier(found);
+    setSelectedWeeks([]);
+    setPortalMessage('');
+  };
 
   const saveCarriersState = (newCarriers) => {
     setCarriers(newCarriers);
@@ -200,8 +202,9 @@ export default function App() {
   };
 
   const handleManualBidStart = (carrier) => {
-    localStorage.setItem('nalc_active_token', carrier.id);
-    window.location.search = `?carrierId=${carrier.id}`;
+    localStorage.setItem('nalc_logged_in_carrier', carrier.id);
+    setCurrentCarrier(carrier);
+    setIsStewardView(false);
   };
 
   const handleSendLinkAndStartTimer = async (carrier) => {
@@ -224,12 +227,12 @@ export default function App() {
       }).eq('id', carrier.id);
     } catch (err) {}
 
-    // Standard query parameter link with a dummy tracking param at the end to prevent text stripping
-    const cleanOrigin = window.location.origin.split('/#')[0].split('/?')[0];
-    const portalLink = `${cleanOrigin}/?carrierId=${carrier.id}&t=${Date.now()}`;
+    const cleanOrigin = window.location.origin;
+    const userPin = carrier.pin || (carrier.phone ? carrier.phone.slice(-4) : '1234');
+    const portalLink = `${cleanOrigin}`;
 
     const deadlineFormatted = deadline.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-    const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! You have until ${deadlineFormatted} to submit your picks: ${portalLink}`);
+    const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! Go to ${portalLink}, select your name, and use PIN: ${userPin}. You have until ${deadlineFormatted} to submit your picks.`);
     
     window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
   };
@@ -237,11 +240,13 @@ export default function App() {
   const handleAddCarrier = async (e) => {
     e.preventDefault();
     if (!newCarrierName.trim()) return;
+    const pinVal = newCarrierPin.trim() || (newCarrierPhone ? newCarrierPhone.slice(-4) : '1234');
     const newCarrier = {
       id: String(Date.now()),
       name: newCarrierName.trim(),
       category: Number(newCarrierCategory),
       phone: newCarrierPhone.trim(),
+      pin: pinVal,
       contact: newCarrierContact.trim(),
       round1Choice: [],
       round2Choice: [],
@@ -254,8 +259,8 @@ export default function App() {
     const updated = [...carriers, newCarrier];
     saveCarriersState(updated);
     try { await supabase.from('carriers').insert([newCarrier]); } catch (err) {}
-    setNewCarrierName(''); setNewCarrierPhone(''); setNewCarrierContact(''); setNewCarrierRank('');
-    alert(`Successfully added ${newCarrier.name} to the roster!`);
+    setNewCarrierName(''); setNewCarrierPhone(''); setNewCarrierPin(''); setNewCarrierContact(''); setNewCarrierRank('');
+    alert(`Successfully added ${newCarrier.name} with PIN: ${pinVal}!`);
   };
 
   const handleUpdateRank = async (id, newRank) => {
@@ -320,9 +325,9 @@ export default function App() {
       ).eq('id', currentCarrier.id);
     } catch (err) {}
 
-    localStorage.removeItem('nalc_active_token');
+    localStorage.removeItem('nalc_logged_in_carrier');
     alert(`Round ${activeRound} selections successfully submitted for ${currentCarrier.name}!`);
-    window.location.href = window.location.pathname;
+    setCurrentCarrier(null);
   };
 
   const formatWeeksWithDates = (weekNums) => {
@@ -367,7 +372,7 @@ export default function App() {
           </div>
         ) : (
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={() => setIsStewardView(!isStewardView)} style={{ background: '#003366', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{isStewardView ? '📋 Back to Bidding' : '🛡️ Steward Board'}</button>
+            <button onClick={() => setIsStewardView(!isStewardView)} style={{ background: '#003366', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{isStewardView ? '📋 Back to Portal' : '🛡️ Steward Board'}</button>
             <button onClick={() => setIsAdminOpen(!isAdminOpen)} style={{ background: '#555', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer' }}>{isAdminOpen ? 'Close Roster Admin' : '⚙️ Roster & Quota Settings'}</button>
           </div>
         )}
@@ -386,6 +391,7 @@ export default function App() {
               <tr style={{ background: '#003366', color: '#fff', textAlign: 'left', fontSize: '13px' }}>
                 <th style={{ padding: '10px' }}>Priority #</th>
                 <th style={{ padding: '10px' }}>Carrier Name</th>
+                <th style={{ padding: '10px' }}>PIN</th>
                 <th style={{ padding: '10px' }}>Status</th>
                 <th style={{ padding: '10px', textAlign: 'center' }}>PS 3971</th>
                 <th style={{ padding: '10px' }}>Actions</th>
@@ -395,10 +401,12 @@ export default function App() {
               {sortedCarriers.map((c) => {
                 const isCurrentTurn = activeBiddingCarrier && activeBiddingCarrier.id === c.id;
                 const hasFinished = currentRound === 1 ? (c.round1Choice?.length > 0) : (c.round2Choice?.length > 0);
+                const carrierPin = c.pin || (c.phone ? c.phone.slice(-4) : '1234');
                 return (
                   <tr key={c.id} style={{ borderBottom: '1px solid #ddd', fontSize: '13px', background: isCurrentTurn ? '#fff9e6' : '#fff' }}>
                     <td style={{ padding: '10px', fontWeight: 'bold' }}>#{c.seniority_order}</td>
                     <td style={{ padding: '10px', fontWeight: 'bold' }}>{c.name} {isCurrentTurn && '(Up Now)'}</td>
+                    <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{carrierPin}</td>
                     <td style={{ padding: '10px' }}>{hasFinished ? '✓ Completed' : 'Pending'}</td>
                     <td style={{ padding: '10px', textAlign: 'center' }}><input type="checkbox" checked={!!c.ps3971_submitted} onChange={() => togglePS3971Status(c.id, c.ps3971_submitted)} /></td>
                     <td style={{ padding: '10px', display: 'flex', gap: '6px' }}>
@@ -454,8 +462,9 @@ export default function App() {
               <option value={2}>Cat 2 (3 Weeks)</option>
               <option value={3}>Cat 3 (3 Weeks)</option>
             </select>
-            <input type="tel" placeholder="Phone" value={newCarrierPhone} onChange={(e) => setNewCarrierPhone(e.target.value)} style={{ padding: '6px', width: '120px' }} />
-            <input type="number" placeholder="Priority #" value={newCarrierRank} onChange={(e) => setNewCarrierRank(e.target.value)} style={{ padding: '6px', width: '80px' }} />
+            <input type="tel" placeholder="Phone" value={newCarrierPhone} onChange={(e) => setNewCarrierPhone(e.target.value)} style={{ padding: '6px', width: '110px' }} />
+            <input type="text" placeholder="PIN (opt)" value={newCarrierPin} onChange={(e) => setNewCarrierPin(e.target.value)} style={{ padding: '6px', width: '80px' }} />
+            <input type="number" placeholder="Priority #" value={newCarrierRank} onChange={(e) => setNewCarrierRank(e.target.value)} style={{ padding: '6px', width: '70px' }} />
             <button type="submit" style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }}>Add Carrier</button>
           </form>
 
@@ -485,13 +494,47 @@ export default function App() {
         </div>
       )}
 
-      {/* SECURE LANDING (STRICT TOKEN-ONLY) */}
+      {/* SECURE CARRIER LOGIN SCREEN */}
       {!currentCarrier && !isStewardUnlocked && !portalMessage ? (
-        <div className="no-print" style={{ background: '#fff', padding: '30px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto', textAlign: 'center' }}>
-          <h2 style={{ color: '#003366', marginTop: 0 }}>Secure Bidding Portal</h2>
-          <p style={{ fontSize: '14px', color: '#555', lineHeight: '1.5' }}>
-            Please use your personalized text message link sent by your shop steward to access your secure vacation bidding calendar.
+        <div className="no-print" style={{ background: '#fff', padding: '30px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '400px', margin: '40px auto', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+          <h2 style={{ color: '#003366', marginTop: 0, textAlign: 'center' }}>Carrier Login</h2>
+          <p style={{ fontSize: '13px', color: '#555', textAlign: 'center', marginBottom: '20px' }}>
+            Select your name and enter your assigned 4-digit PIN to access your secure bidding calendar.
           </p>
+          <form onSubmit={handleCarrierLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>Select Your Name:</label>
+              <select 
+                value={loginCarrierId} 
+                onChange={(e) => setLoginCarrierId(e.target.value)}
+                style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px' }}
+              >
+                <option value="">-- Choose Your Name --</option>
+                {sortedCarriers.map(c => (
+                  <option key={c.id} value={c.id}>{c.name} (Priority #{c.seniority_order})</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>Enter Your 4-Digit PIN:</label>
+              <input 
+                type="password" 
+                maxLength={6}
+                placeholder="PIN" 
+                value={loginPinInput} 
+                onChange={(e) => setLoginPinInput(e.target.value)}
+                style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <button 
+              type="submit" 
+              style={{ background: '#003366', color: '#fff', border: 'none', padding: '12px', borderRadius: '4px', fontSize: '15px', fontWeight: 'bold', cursor: 'pointer', marginTop: '6px' }}
+            >
+              🔓 Open My Bidding Calendar
+            </button>
+          </form>
         </div>
       ) : null}
 
@@ -503,7 +546,7 @@ export default function App() {
               <h3 style={{ margin: 0, color: '#155724' }}>Authenticated as: {currentCarrier.name} (Priority #{currentCarrier.seniority_order})</h3>
               <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>Category {currentCarrier.category} — Selected: {selectedWeeks.join(', ') || 'None'}</p>
             </div>
-            <button onClick={() => { localStorage.removeItem('nalc_active_token'); window.location.href = window.location.pathname; }} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Exit</button>
+            <button onClick={() => { localStorage.removeItem('nalc_logged_in_carrier'); setCurrentCarrier(null); }} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Log Out</button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '8px', marginBottom: '20px' }}>
