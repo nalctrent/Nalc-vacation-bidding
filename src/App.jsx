@@ -83,7 +83,7 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isStewardView, setIsStewardView] = useState(true);
 
-  // FORCE LIVE SUPABASE SYNC ON EVERY LOAD
+  // Live Supabase sync on load
   useEffect(() => {
     const syncData = async () => {
       try {
@@ -342,20 +342,31 @@ export default function App() {
 
     const hasCompletedR1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
     const activeRound = hasCompletedR1 ? 2 : 1;
-    const fieldToUpdate = activeRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks };
+
+    // Send both camelCase and snake_case keys to match whichever column naming scheme Supabase uses
+    const fieldToUpdate = activeRound === 1 
+      ? { round1Choice: selectedWeeks, round_1_choice: selectedWeeks } 
+      : { round2Choice: selectedWeeks, round_2_choice: selectedWeeks };
 
     try {
-      const { error } = await supabase
+      const { data, error, count } = await supabase
         .from('carriers')
-        .update(fieldToUpdate)
-        .eq('name', currentCarrier.name.trim());
+        .update(fieldToUpdate, { count: 'exact' })
+        .or(`id.eq.${currentCarrier.id},name.ilike.${currentCarrier.name.trim()}`);
 
       if (error) {
-        alert(`Database error: ${error.message}`);
+        alert(`Supabase Error: ${error.message}`);
         return;
       }
+
+      if (count === 0) {
+        alert(`Database connected, but 0 rows matched carrier "${currentCarrier.name}" (ID: ${currentCarrier.id}).`);
+        return;
+      }
+
+      alert(`Success! Saved Round ${activeRound} picks for ${currentCarrier.name}.`);
     } catch (err) {
-      alert('Network error while saving selections.');
+      alert(`Network Error: ${err.message}`);
       return;
     }
 
@@ -370,28 +381,14 @@ export default function App() {
           from: 'NALC Branch 366 <bidding@yourdomain.com>',
           to: ['nalctrent@gmail.com'],
           subject: `[BID SUBMITTED] ${currentCarrier.name} completed Round ${activeRound}`,
-          html: `<p><strong>${currentCarrier.name}</strong> (Priority #${currentCarrier.seniority_order}) has successfully submitted their picks for <strong>Round ${activeRound}</strong>.</p>
-                 <p><strong>Selected Weeks:</strong> ${selectedWeeks.join(', ')}</p>`
+          html: `<p><strong>${currentCarrier.name}</strong> (Priority #${currentCarrier.seniority_order}) submitted Round ${activeRound}.</p><p>Selected Weeks: ${selectedWeeks.join(', ')}</p>`
         })
       });
-    } catch (emailErr) {
-      console.warn('Email notification failed to send.');
-    }
+    } catch (e) {}
 
     localStorage.removeItem('nalc_logged_in_carrier');
-
-    const updated = carriers.map(c => {
-      if (String(c.id) === String(currentCarrier.id)) {
-        return activeRound === 1 ? { ...c, round1Choice: selectedWeeks } : { ...c, round2Choice: selectedWeeks };
-      }
-      return c;
-    });
-
-    saveCarriersState(updated);
     setCurrentCarrier(null);
     setSelectedWeeks([]);
-    
-    alert(`Round ${activeRound} selections successfully submitted for ${currentCarrier.name}!`);
     window.location.reload();
   };
 
