@@ -107,12 +107,12 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // AUTO-LOGIN VIA PERSONALIZED URL PARAMETER (?carrierId=xyz)
+  // AUTO-LOGIN VIA PERSONALIZED URL PARAMETER (?carrierId=xyz) WITH INSTANT SESSION SWITCH & URL CLEANUP
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const targetId = params.get('carrierId');
 
-    if (targetId && carriers.length > 0 && !currentCarrier) {
+    if (targetId && carriers.length > 0) {
       const found = carriers.find(c => String(c.id) === String(targetId));
       if (found) {
         // Enforce turn lock unless steward is unlocked
@@ -130,11 +130,15 @@ export default function App() {
           return;
         }
 
+        // Instantly switch session to target carrier
         setCurrentCarrier(found);
         setSelectedWeeks([]);
+
+        // Clean up address bar so link parameters don't linger in browser history
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
-  }, [carriers, activeBiddingCarrier, currentRound, currentCarrier, isStewardUnlocked]);
+  }, [carriers, activeBiddingCarrier, currentRound, isStewardUnlocked]);
 
   const getSlotsForWeek = (weekObj) => {
     if (customSlots[weekObj.weekNum] !== undefined) {
