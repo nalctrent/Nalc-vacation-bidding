@@ -50,11 +50,10 @@ const CALENDAR_WEEKS = generateYearWeeks();
 const DEFAULT_ROSTER = [
   { id: '1', name: 'Trenton Bauer', category: 3, phone: '4173964312', pin: '4312', contact: 'nalctrent@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 1, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'active' },
   { id: '2', name: 'Jessica', category: 2, phone: '4173565260', pin: '5260', contact: 'Jessica.branch366@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 2, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' },
-  { id: '3', name: 'Sexy McHottie', category: 2, phone: '', pin: '1234', contact: '', round1Choice: [], round2Choice: [], seniority_order: 3, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' }
+  { id: '3', name: 'John Doe', category: 1, phone: '', pin: '1234', contact: '', round1Choice: [], round2Choice: [], seniority_order: 3, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' }
 ];
 
 export default function App() {
-  // Always initialize from Supabase-synced data or a clean default
   const [carriers, setCarriers] = useState(() => {
     const saved = localStorage.getItem('nalc_carriers');
     return saved ? JSON.parse(saved) : DEFAULT_ROSTER;
@@ -311,24 +310,58 @@ export default function App() {
 
     const hasCompletedR1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
     const activeRound = hasCompletedR1 ? 2 : 1;
+    const fieldToUpdate = activeRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks };
 
+    // 1. Update Supabase Database
+    try {
+      const { error } = await supabase
+        .from('carriers')
+        .update(fieldToUpdate)
+        .eq('id', currentCarrier.id);
+
+      if (error) {
+        alert('Error saving to database. Please try again.');
+        return;
+      }
+    } catch (err) {
+      alert('Network error while saving selections.');
+      return;
+    }
+
+    // 2. Send Email Notification via Resend API
+    try {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.REACT_APP_RESEND_API_KEY || 'your-resend-api-key'}`
+        },
+        body: JSON.stringify({
+          from: 'NALC Branch 366 <bidding@yourdomain.com>',
+          to: ['nalctrent@gmail.com'],
+          subject: `Vacation Bidding Update: ${currentCarrier.name} Completed Round ${activeRound}`,
+          html: `<p><strong>${currentCarrier.name}</strong> (Priority #${currentCarrier.seniority_order}) has successfully submitted their picks for <strong>Round ${activeRound}</strong>.</p>
+                 <p><strong>Selected Weeks:</strong> ${selectedWeeks.join(', ')}</p>`
+        })
+      });
+    } catch (emailErr) {
+      console.warn('Email notification failed to send, but bid was saved successfully.');
+    }
+
+    // 3. Update local state & wrap up
     const updated = carriers.map(c => {
-      if (c.id === currentCarrier.id) {
+      if (String(c.id) === String(currentCarrier.id)) {
         return activeRound === 1 ? { ...c, round1Choice: selectedWeeks } : { ...c, round2Choice: selectedWeeks };
       }
       return c;
     });
 
     saveCarriersState(updated);
-    try {
-      await supabase.from('carriers').update(
-        activeRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks }
-      ).eq('id', currentCarrier.id);
-    } catch (err) {}
-
     localStorage.removeItem('nalc_logged_in_carrier');
+    
     alert(`Round ${activeRound} selections successfully submitted for ${currentCarrier.name}!`);
     setCurrentCarrier(null);
+    window.location.reload();
   };
 
   const formatWeeksWithDates = (weekNums) => {
