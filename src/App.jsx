@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || 'https://your-supabase-url.supabase.co';
-const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY || 'your-supabase-anon-key';
+const supabaseUrl = 'https://zvixsdcwogzmvdtkopjq.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2aXhzZGN3b2d6bXZkdGtvcGpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyMjcwNDUsImV4cCI6MjEwODgwMzA0NX0.LDHZC7SjEBdSVvdm1aVXvZ7MmueIwHwEnK5z6EQfYws';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const calculateBiddingDeadline = (startDate = new Date()) => {
@@ -272,11 +272,34 @@ export default function App() {
     try { await supabase.from('carriers').update({ seniority_order: Number(newRank) }).eq('id', id); } catch (err) {}
   };
 
+  // Seniority shifting logic on deletion:
+  // When a carrier is deleted, everyone below their rank goes up one rank (seniority_order decreases by 1)
   const handleRemoveCarrier = async (id) => {
     if (confirm('Remove carrier?')) {
-      const updated = carriers.filter(c => c.id !== id);
+      const targetCarrier = carriers.find(c => c.id === id);
+      const deletedRank = targetCarrier ? targetCarrier.seniority_order : null;
+
+      const updated = carriers
+        .filter(c => c.id !== id)
+        .map(c => {
+          if (deletedRank !== null && c.seniority_order > deletedRank) {
+            return { ...c, seniority_order: c.seniority_order - 1 };
+          }
+          return c;
+        });
+
       saveCarriersState(updated);
-      try { await supabase.from('carriers').delete().eq('id', id); } catch (err) {}
+
+      try {
+        await supabase.from('carriers').delete().eq('id', id);
+        for (const c of updated) {
+          if (deletedRank !== null && c.seniority_order >= deletedRank) {
+            await supabase.from('carriers').update({ seniority_order: c.seniority_order }).eq('id', c.id);
+          }
+        }
+      } catch (err) {
+        console.error('Error updating ranks after removal:', err);
+      }
     }
   };
 
@@ -316,7 +339,6 @@ export default function App() {
     const fieldToUpdate = activeRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks };
 
     try {
-      // Updated to target by name to safely bypass any ID type mismatches
       const { error } = await supabase
         .from('carriers')
         .update(fieldToUpdate)
