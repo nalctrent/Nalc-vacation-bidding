@@ -115,7 +115,8 @@ export default function App() {
     if (targetId && carriers.length > 0 && !currentCarrier) {
       const found = carriers.find(c => String(c.id) === String(targetId));
       if (found) {
-        if (activeBiddingCarrier && activeBiddingCarrier.id !== found.id) {
+        // Enforce turn lock unless steward is unlocked
+        if (!isStewardUnlocked && activeBiddingCarrier && activeBiddingCarrier.id !== found.id) {
           alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid in Round ${currentRound}. You cannot bid out of order.`);
           return;
         }
@@ -133,7 +134,7 @@ export default function App() {
         setSelectedWeeks([]);
       }
     }
-  }, [carriers, activeBiddingCarrier, currentRound, currentCarrier]);
+  }, [carriers, activeBiddingCarrier, currentRound, currentCarrier, isStewardUnlocked]);
 
   const getSlotsForWeek = (weekObj) => {
     if (customSlots[weekObj.weekNum] !== undefined) {
@@ -182,7 +183,7 @@ export default function App() {
   const handleCarrierLogin = (e) => {
     e.preventDefault();
     if (!selectedCarrierId) {
-      alert('Please select your name.');
+      alert('Please select a name.');
       return;
     }
     const found = carriers.find(c => String(c.id) === String(selectedCarrierId));
@@ -191,7 +192,8 @@ export default function App() {
       return;
     }
 
-    if (activeBiddingCarrier && activeBiddingCarrier.id !== found.id) {
+    // Bypass turn lock if Steward Mode is unlocked for manual bidding
+    if (!isStewardUnlocked && activeBiddingCarrier && activeBiddingCarrier.id !== found.id) {
       alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid in Round ${currentRound}. You cannot bid out of order.`);
       return;
     }
@@ -201,12 +203,19 @@ export default function App() {
       : (found.round2Choice && found.round2Choice.length > 0);
 
     if (hasFinishedCurrentRound) {
-      alert(`You have already completed Round ${currentRound}. Please wait.`);
+      alert(`This carrier has already completed Round ${currentRound}.`);
       return;
     }
 
     setCurrentCarrier(found);
     setSelectedWeeks([]);
+  };
+
+  // Steward Action: Manual bid entry on behalf of carrier
+  const handleManualBidStart = (carrier) => {
+    setCurrentCarrier(carrier);
+    setSelectedWeeks([]);
+    setIsStewardView(false);
   };
 
   // Steward Action: Send personalized link & start 48-hour clock
@@ -230,7 +239,6 @@ export default function App() {
       }).eq('id', carrier.id);
     } catch (err) {}
 
-    // Generates personalized direct auto-login link
     const portalLink = `${window.location.origin}${window.location.pathname}?carrierId=${carrier.id}`;
     const deadlineFormatted = deadline.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! You have until ${deadlineFormatted} to submit your picks: ${portalLink}`);
@@ -325,12 +333,18 @@ export default function App() {
       return;
     }
 
-    const maxWeeksAllowed = currentRound === 1 
-      ? (currentCarrier.category === 1 ? 2 : 3) 
-      : 1;
+    // Determine if this specific carrier is bidding Round 1 or Round 2
+    const carrierHasCompletedRound1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
+    const maxWeeksAllowed = carrierHasCompletedRound1 
+      ? 1 
+      : (currentCarrier.category === 1 ? 2 : 3);
 
     if (selectedWeeks.length >= maxWeeksAllowed) {
-      alert(`Category ${currentCarrier.category} carriers are limited to a maximum of ${maxWeeksAllowed} selection(s) in Round ${currentRound}.`);
+      alert(
+        carrierHasCompletedRound1 
+          ? 'Round 2 is strictly limited to 1 week selection.' 
+          : `Category ${currentCarrier.category} carriers are limited to a maximum of ${maxWeeksAllowed} selection(s) in Round 1.`
+      );
       return;
     }
 
@@ -351,7 +365,11 @@ export default function App() {
       return;
     }
 
-    if (currentRound === 1 && selectedWeeks.length === 3) {
+    const carrierHasCompletedRound1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
+    const activeRoundForCarrier = carrierHasCompletedRound1 ? 2 : 1;
+
+    // LMOU Rule Check for Round 1
+    if (activeRoundForCarrier === 1 && selectedWeeks.length === 3) {
       const [w1, w2, w3] = selectedWeeks;
       const isAllConsecutive = (w2 === w1 + 1 && w3 === w2 + 1);
       const isTwoConsecutivePlusOne = (w2 === w1 + 1) || (w3 === w2 + 1);
@@ -368,21 +386,28 @@ export default function App() {
 
     const updatedCarriers = carriers.map(c => {
       if (c.id === currentCarrier.id) {
-        return currentRound === 1 ? { ...c, round1Choice: selectedWeeks } : { ...c, round2Choice: selectedWeeks };
+        return activeRoundForCarrier === 1 
+          ? { ...c, round1Choice: selectedWeeks } 
+          : { ...c, round2Choice: selectedWeeks };
       }
       return c;
     });
 
     saveCarriersState(updatedCarriers);
 
-    const updatePayload = currentRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks };
+    const updatePayload = activeRoundForCarrier === 1 
+      ? { round1Choice: selectedWeeks } 
+      : { round2Choice: selectedWeeks };
+
     try {
       await supabase.from('carriers').update(updatePayload).eq('id', currentCarrier.id);
     } catch (err) {}
 
-    await triggerOfficerAlert(currentCarrier.name, currentRound, selectedWeeks, deadlineStr);
+    await triggerOfficerAlert(currentCarrier.name, activeRoundForCarrier, selectedWeeks, deadlineStr);
 
-    alert('Bid successfully submitted and locked!');
+    alert(`Round ${activeRoundForCarrier} bid successfully submitted and locked for ${currentCarrier.name}!`);
+    
+    // Clear selection state and logout carrier
     setSelectedWeeks([]);
     setCurrentCarrier(null);
     setSelectedCarrierId('');
@@ -560,12 +585,18 @@ export default function App() {
                         style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                       />
                     </td>
-                    <td style={{ padding: '10px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <td style={{ padding: '10px', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <button
                         onClick={() => handleSendLinkAndStartTimer(c)}
                         style={{ background: '#28a745', color: '#fff', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
                       >
                         💬 Send Link
+                      </button>
+                      <button
+                        onClick={() => handleManualBidStart(c)}
+                        style={{ background: '#ffc107', color: '#000', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
+                      >
+                        ✏️ Manual Bid
                       </button>
                       {deadlinePassed && !hasFinished && (
                         <button
@@ -629,7 +660,7 @@ export default function App() {
         </div>
       )}
 
-      {/* CARRIER FALLBACK SCREEN (WHEN OPENING MAIN PORTAL URL DIRECTLY) */}
+      {/* CARRIER FALLBACK / MANUAL LOGIN SCREEN */}
       {!currentCarrier ? (
         <div className="no-print" style={{ background: '#fff', padding: '24px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto' }}>
           <h2 style={{ color: '#003366', marginTop: 0 }}>Carrier Portal Login</h2>
@@ -665,7 +696,9 @@ export default function App() {
         <div className="no-print">
           <div style={{ background: '#d4edda', color: '#155724', padding: '12px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #c3e6cb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <h3 style={{ margin: 0, color: '#155724' }}>🔓 Authenticated as {currentCarrier.name} (Priority #{currentCarrier.seniority_order})</h3>
+              <h3 style={{ margin: 0, color: '#155724' }}>
+                🔓 {isStewardUnlocked ? '✏️ Steward Manual Bid Session for' : 'Authenticated as'} {currentCarrier.name} (Priority #{currentCarrier.seniority_order})
+              </h3>
               <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>
                 Category {currentCarrier.category} — Selected Weeks: {selectedWeeks.join(', ') || 'None'}
               </p>
@@ -715,19 +748,22 @@ export default function App() {
 
           <button
             onClick={handleSubmitBid}
+            disabled={selectedWeeks.length === 0}
             style={{
               width: '100%',
               padding: '14px',
-              background: '#28a745',
-              color: '#fff',
+              background: selectedWeeks.length === 0 ? '#cccccc' : '#28a745',
+              color: selectedWeeks.length === 0 ? '#666666' : '#fff',
               border: 'none',
               borderRadius: '6px',
               fontSize: '16px',
               fontWeight: 'bold',
-              cursor: 'pointer',
+              cursor: selectedWeeks.length === 0 ? 'not-allowed' : 'pointer',
             }}
           >
-            Submit Round {currentRound} Selections
+            {selectedWeeks.length === 0 
+              ? 'Select at least 1 week on the calendar to submit' 
+              : `Submit ${currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0 ? 'Round 2' : 'Round 1'} Selections (${selectedWeeks.length} selected)`}
           </button>
         </div>
       )}
