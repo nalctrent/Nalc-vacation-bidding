@@ -54,10 +54,8 @@ const DEFAULT_ROSTER = [
 ];
 
 export default function App() {
-  const [carriers, setCarriers] = useState(() => {
-    const saved = localStorage.getItem('nalc_carriers');
-    return saved ? JSON.parse(saved) : DEFAULT_ROSTER;
-  });
+  // Always start clean and force Supabase to populate live
+  const [carriers, setCarriers] = useState(DEFAULT_ROSTER);
 
   const [currentCarrier, setCurrentCarrier] = useState(null);
   const [selectedWeeks, setSelectedWeeks] = useState([]);
@@ -94,10 +92,9 @@ export default function App() {
         const { data, error } = await supabase.from('carriers').select('*').order('seniority_order', { ascending: true });
         if (!error && data && data.length > 0) {
           setCarriers(data);
-          localStorage.setItem('nalc_carriers', JSON.stringify(data));
         }
       } catch (err) {
-        console.warn('Network sync failed, using local fallback');
+        console.warn('Network sync failed, using default fallback');
       } finally {
         setIsDataLoaded(true);
       }
@@ -143,14 +140,12 @@ export default function App() {
       return;
     }
 
-    // ALWAYS FETCH FRESH DATA FROM SUPABASE ON LOGIN TO PREVENT STALE CACHE LOCKOUTS
     let latestCarriers = carriers;
     try {
       const { data, error } = await supabase.from('carriers').select('*');
       if (!error && data && data.length > 0) {
         latestCarriers = data;
         setCarriers(data);
-        localStorage.setItem('nalc_carriers', JSON.stringify(data));
       }
     } catch (err) {}
 
@@ -166,7 +161,6 @@ export default function App() {
       return;
     }
 
-    // Check completion status using the fresh live database record
     const hasFinishedRound = currentRound === 1 
       ? (found.round1Choice && found.round1Choice.length > 0)
       : (found.round2Choice && found.round2Choice.length > 0);
@@ -184,7 +178,6 @@ export default function App() {
 
   const saveCarriersState = (newCarriers) => {
     setCarriers(newCarriers);
-    localStorage.setItem('nalc_carriers', JSON.stringify(newCarriers));
   };
 
   const getSlotsForWeek = (weekObj) => {
@@ -325,7 +318,6 @@ export default function App() {
     const activeRound = hasCompletedR1 ? 2 : 1;
     const fieldToUpdate = activeRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks };
 
-    // 1. Update Supabase Database
     try {
       const { error } = await supabase
         .from('carriers')
@@ -341,7 +333,6 @@ export default function App() {
       return;
     }
 
-    // 2. Send Email Notification via Resend API
     try {
       await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -361,7 +352,6 @@ export default function App() {
       console.warn('Email notification failed to send, but bid was saved successfully.');
     }
 
-    // 3. Update local state & wrap up
     const updated = carriers.map(c => {
       if (String(c.id) === String(currentCarrier.id)) {
         return activeRound === 1 ? { ...c, round1Choice: selectedWeeks } : { ...c, round2Choice: selectedWeeks };
