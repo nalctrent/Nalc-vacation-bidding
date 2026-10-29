@@ -106,7 +106,6 @@ export default function App() {
     if (savedId) {
       const found = carriers.find(c => String(c.id) === String(savedId));
       if (found) {
-        // If they already finished this round, clear auto-login loop trap
         const globalRound = carriers.every(c => c.round1Choice && c.round1Choice.length > 0) ? 2 : 1;
         const finishedCurrent = globalRound === 1 ? (found.round1Choice && found.round1Choice.length > 0) : (found.round2Choice && found.round2Choice.length > 0);
         
@@ -281,7 +280,6 @@ export default function App() {
     try { await supabase.from('carriers').update({ seniority_order: Number(newRank) }).eq('id', id); } catch (err) {}
   };
 
-  // Seniority shifting logic on deletion
   const handleRemoveCarrier = async (id) => {
     if (confirm('Remove carrier?')) {
       const targetCarrier = carriers.find(c => c.id === id);
@@ -347,7 +345,6 @@ export default function App() {
     const fieldToUpdate = activeRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks };
 
     try {
-      // Force exact name matching against the Supabase database row
       const { error } = await supabase
         .from('carriers')
         .update(fieldToUpdate)
@@ -362,7 +359,6 @@ export default function App() {
       return;
     }
 
-    // Email notification dispatch
     try {
       await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -382,7 +378,6 @@ export default function App() {
       console.warn('Email notification failed to send.');
     }
 
-    // Clear local storage login session immediately to prevent loop traps
     localStorage.removeItem('nalc_logged_in_carrier');
 
     const updated = carriers.map(c => {
@@ -433,7 +428,6 @@ export default function App() {
         </p>
       </header>
 
-      {/* TOP NAVIGATION & STEWARD UNLOCK */}
       <div className="no-print" style={{ display: 'flex', gap: '10px', marginBottom: '16px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         {!isStewardUnlocked ? (
           <div style={{ display: 'flex', gap: '6px' }}>
@@ -448,7 +442,6 @@ export default function App() {
         )}
       </div>
 
-      {/* STEWARD MASTER BOARD */}
       {isStewardUnlocked && isStewardView ? (
         <div style={{ background: '#eef2f7', padding: '20px', borderRadius: '8px', border: '1px solid #b0c4de', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
@@ -491,7 +484,6 @@ export default function App() {
         </div>
       ) : null}
 
-      {/* ROSTER & QUOTA SETTINGS ADMIN PANEL */}
       {isStewardUnlocked && isAdminOpen && (
         <div className="no-print" style={{ background: '#f4f4f4', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ccc' }}>
           <h3>Staffing & Leave Quota Settings</h3>
@@ -564,7 +556,6 @@ export default function App() {
         </div>
       )}
 
-      {/* SECURE CARRIER LOGIN SCREEN */}
       {!currentCarrier && !isStewardUnlocked && !portalMessage ? (
         <div className="no-print" style={{ background: '#fff', padding: '30px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '400px', margin: '40px auto', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
           <h2 style={{ color: '#003366', marginTop: 0, textAlign: 'center' }}>Carrier Login</h2>
@@ -608,7 +599,6 @@ export default function App() {
         </div>
       ) : null}
 
-      {/* BIDDING CALENDAR VIEW */}
       {currentCarrier ? (
         <div className="no-print">
           <div style={{ background: '#d4edda', color: '#155724', padding: '12px', borderRadius: '6px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -644,7 +634,7 @@ export default function App() {
                   <div style={{ fontWeight: 'bold', fontSize: '13px' }}>Week {week.weekNum}</div>
                   <div style={{ fontSize: '11px', color: isSelected ? '#e0e0e0' : '#555' }}>{week.dateString}</div>
                   <div style={{ fontSize: '10px', fontWeight: 'bold', color: isSelected ? '#ffcc00' : (week.isPrimeTime ? '#b8860b' : '#666') }}>{week.isPrimeTime ? '☀️ Prime' : 'Standard'}</div>
-                  <div style={{ fontSize: '11px', marginTop: '2px' => slots: {booked}/{maxSlots}</div>
+                  <div style={{ fontSize: '11px', marginTop: '2px' }}>Slots: {booked}/{maxSlots}</div>
                 </button>
               );
             })}
