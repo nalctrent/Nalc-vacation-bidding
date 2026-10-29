@@ -7,19 +7,21 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { carrierName, round, choices, email } = req.body;
+  const { carrierName, roundNumber, selectedWeeks, nextCarrierName } = req.body;
 
   try {
     const { data, error } = await resend.emails.send({
       from: 'NALC Branch 366 <onboarding@resend.dev>',
-      to: [email || 'nalctrent@gmail.com'],
-      subject: `Vacation Bid Confirmation - ${carrierName} (${round})`,
+      to: ['nalctrent@gmail.com'],
+      subject: `🚨 [BID SUBMITTED] ${carrierName} completed Round ${roundNumber || 1}`,
       html: `
-        <h2>NALC Branch 366 - Vacation Bid Confirmation</h2>
+        <h2>NALC Branch 366 - Vacation Selection Locked In!</h2>
         <p><strong>Carrier:</strong> ${carrierName}</p>
-        <p><strong>Round:</strong> ${round}</p>
-        <p><strong>Selected Weeks:</strong> ${Array.isArray(choices) ? choices.join(', ') : choices}</p>
-        <p>Your selections have been successfully recorded and locked into the cloud database.</p>
+        <p><strong>Round:</strong> Round ${roundNumber || 1}</p>
+        <p><strong>Selected Weeks:</strong> ${Array.isArray(selectedWeeks) ? selectedWeeks.map(w => `Week ${w}`).join(', ') : 'None'}</p>
+        <hr />
+        <h3 style="color: #003366;">👉 Next Up to Bid: ${nextCarrierName || 'All Bidding Completed'}</h3>
+        <p>Log into the steward board to send them their turn notification text!</p>
       `,
     });
 
