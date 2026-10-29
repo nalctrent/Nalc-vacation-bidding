@@ -50,10 +50,11 @@ const CALENDAR_WEEKS = generateYearWeeks();
 const DEFAULT_ROSTER = [
   { id: '1', name: 'Trenton Bauer', category: 3, phone: '4173964312', pin: '4312', contact: 'nalctrent@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 1, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'active' },
   { id: '2', name: 'Jessica', category: 2, phone: '4173565260', pin: '5260', contact: 'Jessica.branch366@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 2, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' },
-  { id: '3', name: 'John Doe', category: 1, phone: '', pin: '1234', contact: '', round1Choice: [], round2Choice: [], seniority_order: 3, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' }
+  { id: '3', name: 'Sexy McHottie', category: 2, phone: '', pin: '1234', contact: '', round1Choice: [], round2Choice: [], seniority_order: 3, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' }
 ];
 
 export default function App() {
+  // Always initialize from Supabase-synced data or a clean default
   const [carriers, setCarriers] = useState(() => {
     const saved = localStorage.getItem('nalc_carriers');
     return saved ? JSON.parse(saved) : DEFAULT_ROSTER;
@@ -87,6 +88,7 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isStewardView, setIsStewardView] = useState(true);
 
+  // FORCE LIVE SUPABASE SYNC ON EVERY LOAD
   useEffect(() => {
     const syncData = async () => {
       try {
@@ -147,7 +149,6 @@ export default function App() {
       return;
     }
 
-    // Default PIN fallback if not set is last 4 of phone or '1234'
     const expectedPin = found.pin || (found.phone ? found.phone.slice(-4) : '1234');
     if (loginPinInput.trim() !== expectedPin) {
       alert('Incorrect PIN. Please check with your shop steward if you forgot your PIN.');
