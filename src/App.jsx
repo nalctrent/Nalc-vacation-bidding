@@ -70,7 +70,7 @@ export default function App() {
   const [customSlots, setCustomSlots] = useState({});
   const [newCarrierName, setNewCarrierName] = useState('');
   const [newCarrierCategory, setNewCarrierCategory] = useState(1);
-  const [newCarrierPin, setNewCarrierPin] = useState('');
+  const [newCarrierPin, setNewCarrierPin] = useState('0000');
   const [newCarrierPhone, setNewCarrierPhone] = useState('');
   const [newCarrierContact, setNewCarrierContact] = useState('');
   const [newCarrierRank, setNewCarrierRank] = useState('');
@@ -108,6 +108,34 @@ export default function App() {
   const activeBiddingCarrier = currentRound === 1
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
+
+  // AUTO-LOGIN VIA PERSONALIZED URL PARAMETER (?carrierId=xyz)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const targetId = params.get('carrierId');
+
+    if (targetId && carriers.length > 0 && !currentCarrier) {
+      const found = carriers.find(c => String(c.id) === String(targetId));
+      if (found) {
+        if (activeBiddingCarrier && activeBiddingCarrier.id !== found.id) {
+          alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid in Round ${currentRound}. You cannot bid out of order.`);
+          return;
+        }
+
+        const hasFinishedCurrentRound = currentRound === 1 
+          ? (found.round1Choice && found.round1Choice.length > 0)
+          : (found.round2Choice && found.round2Choice.length > 0);
+
+        if (hasFinishedCurrentRound) {
+          alert(`You have already completed Round ${currentRound}. Please wait for the next round.`);
+          return;
+        }
+
+        setCurrentCarrier(found);
+        setSelectedWeeks([]);
+      }
+    }
+  }, [carriers, activeBiddingCarrier, currentRound, currentCarrier]);
 
   const getSlotsForWeek = (weekObj) => {
     if (customSlots[weekObj.weekNum] !== undefined) {
@@ -170,11 +198,6 @@ export default function App() {
       return;
     }
 
-    if (String(found.pin).trim() !== String(pinInput).trim()) {
-      alert('Incorrect 4-digit PIN.');
-      return;
-    }
-
     const hasFinishedCurrentRound = currentRound === 1 
       ? (found.round1Choice && found.round1Choice.length > 0)
       : (found.round2Choice && found.round2Choice.length > 0);
@@ -188,7 +211,7 @@ export default function App() {
     setSelectedWeeks([]);
   };
 
-  // Steward Action: Send link and start 48-hour clock
+  // Steward Action: Send link, start 48-hour clock, and pass carrierId token
   const handleSendLinkAndStartTimer = async (carrier) => {
     const now = new Date();
     const deadline = calculateBiddingDeadline(now);
@@ -209,7 +232,8 @@ export default function App() {
       }).eq('id', carrier.id);
     } catch (err) {}
 
-    const portalLink = window.location.origin + window.location.pathname;
+    // Generates personalized URL bypassing login screen
+    const portalLink = `${window.location.origin}${window.location.pathname}?carrierId=${carrier.id}`;
     const deadlineFormatted = deadline.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! You have until ${deadlineFormatted} to submit your picks: ${portalLink}`);
     
@@ -235,8 +259,8 @@ export default function App() {
 
   const handleAddCarrier = async (e) => {
     e.preventDefault();
-    if (!newCarrierName.trim() || newCarrierPin.length !== 4) {
-      alert('Please enter a valid Carrier Name and a 4-digit PIN.');
+    if (!newCarrierName.trim()) {
+      alert('Please enter a valid Carrier Name.');
       return;
     }
 
@@ -244,7 +268,7 @@ export default function App() {
       id: Date.now().toString(),
       name: newCarrierName.trim(),
       category: Number(newCarrierCategory),
-      pin: newCarrierPin.trim(),
+      pin: '0000',
       phone: newCarrierPhone.trim(),
       contact: newCarrierContact.trim(),
       round1Choice: [],
@@ -264,7 +288,6 @@ export default function App() {
     } catch (err) {}
 
     setNewCarrierName('');
-    setNewCarrierPin('');
     setNewCarrierPhone('');
     setNewCarrierContact('');
     setNewCarrierRank('');
@@ -586,8 +609,7 @@ export default function App() {
               <option value={2}>Cat 2 (3 Weeks)</option>
               <option value={3}>Cat 3 (3 Weeks)</option>
             </select>
-            <input type="text" placeholder="PIN" maxLength={4} value={newCarrierPin} onChange={(e) => setNewCarrierPin(e.target.value)} style={{ padding: '6px', width: '60px' }} />
-            <input type="tel" placeholder="Phone" value={newCarrierPhone} onChange={(e) => setNewCarrierPhone(e.target.value)} style={{ padding: '6px', width: '100px' }} />
+            <input type="tel" placeholder="Phone" value={newCarrierPhone} onChange={(e) => setNewCarrierPhone(e.target.value)} style={{ padding: '6px', width: '120px' }} />
             <input type="number" placeholder="Priority #" value={newCarrierRank} onChange={(e) => setNewCarrierRank(e.target.value)} style={{ padding: '6px', width: '80px' }} />
             <button type="submit" style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }}>Add Carrier</button>
           </form>
@@ -604,7 +626,6 @@ export default function App() {
                   onChange={(e) => handleUpdateRank(c.id, e.target.value)}
                   style={{ width: '50px', textAlign: 'center' }}
                 />
-                <span>PIN: <code>{c.pin}</code></span>
                 <button onClick={() => handleRemoveCarrier(c.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>Remove</button>
               </li>
             ))}
@@ -612,7 +633,7 @@ export default function App() {
         </div>
       )}
 
-      {/* CARRIER LOGIN SCREEN */}
+      {/* CARRIER LOGIN SCREEN (FALLBACK IF DIRECT LINK IS NOT USED) */}
       {!currentCarrier ? (
         <div className="no-print" style={{ background: '#fff', padding: '24px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto' }}>
           <h2 style={{ color: '#003366', marginTop: 0 }}>Carrier Portal Login</h2>
@@ -635,23 +656,11 @@ export default function App() {
               </select>
             </div>
 
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>4-Digit PIN:</label>
-              <input 
-                type="password" 
-                maxLength={4}
-                value={pinInput}
-                onChange={(e) => setPinInput(e.target.value)}
-                placeholder="Enter PIN"
-                style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px', boxSizing: 'border-box' }}
-              />
-            </div>
-
             <button 
               type="submit"
               style={{ width: '100%', background: '#003366', color: '#fff', border: 'none', padding: '12px', borderRadius: '4px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}
             >
-              Log In & View Calendar
+              View Calendar
             </button>
           </form>
         </div>
@@ -669,7 +678,7 @@ export default function App() {
               onClick={() => { setCurrentCarrier(null); setSelectedWeeks([]); }}
               style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
             >
-              Log Out
+              Exit Bidding
             </button>
           </div>
 
