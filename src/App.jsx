@@ -64,6 +64,7 @@ export default function App() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [portalMessage, setPortalMessage] = useState('');
 
+  // Steward / Admin Settings state
   const [totalEmployees, setTotalEmployees] = useState(30);
   const [customSlots, setCustomSlots] = useState({});
   const [newCarrierName, setNewCarrierName] = useState('');
@@ -75,9 +76,8 @@ export default function App() {
   const [stewardPinInput, setStewardPinInput] = useState('');
   const [isStewardUnlocked, setIsStewardUnlocked] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
-  const [isStewardView, setIsStewardView] = useState(false);
+  const [isStewardView, setIsStewardView] = useState(true); // Default to master board when unlocked
 
-  // FETCH FRESH DATA FROM SUPABASE ON MOUNT
   useEffect(() => {
     const syncData = async () => {
       try {
@@ -103,7 +103,6 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // RESOLVE URL PARAMETER SECURELY AFTER DATA LOADS
   useEffect(() => {
     if (!isDataLoaded) return;
 
@@ -149,22 +148,6 @@ export default function App() {
       const r2 = c.round2Choice?.includes(weekNum) ? 1 : 0;
       return count + r1 + r2;
     }, 0);
-  };
-
-  const triggerOfficerAlert = async (carrierName, roundNumber, weeks, deadlineStr) => {
-    try {
-      await fetch('/api/notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          carrierName,
-          round: `Round ${roundNumber}`,
-          selectedWeeks: weeks.join(', '),
-          nextCarrier: activeBiddingCarrier ? activeBiddingCarrier.name : 'All Bidding Completed',
-          deadline: deadlineStr
-        }),
-      });
-    } catch (err) {}
   };
 
   const handleUnlockSteward = () => {
@@ -302,8 +285,6 @@ export default function App() {
     } catch (err) {}
 
     alert(`Round ${activeRound} selections successfully submitted for ${currentCarrier.name}!`);
-    
-    // HARD PURGE URL & SESSION STATE
     window.location.href = window.location.pathname;
   };
 
@@ -340,6 +321,7 @@ export default function App() {
         </p>
       </header>
 
+      {/* TOP NAVIGATION & STEWARD UNLOCK */}
       <div className="no-print" style={{ display: 'flex', gap: '10px', marginBottom: '16px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         {!isStewardUnlocked ? (
           <div style={{ display: 'flex', gap: '6px' }}>
@@ -349,11 +331,12 @@ export default function App() {
         ) : (
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={() => setIsStewardView(!isStewardView)} style={{ background: '#003366', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{isStewardView ? '📋 Back to Bidding' : '🛡️ Steward Board'}</button>
-            <button onClick={() => setIsAdminOpen(!isAdminOpen)} style={{ background: '#555', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer' }}>{isAdminOpen ? 'Close Admin' : '⚙️ Settings'}</button>
+            <button onClick={() => setIsAdminOpen(!isAdminOpen)} style={{ background: '#555', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer' }}>{isAdminOpen ? 'Close Roster Admin' : '⚙️ Roster & Quota Settings'}</button>
           </div>
         )}
       </div>
 
+      {/* STEWARD MASTER BOARD */}
       {isStewardUnlocked && isStewardView ? (
         <div style={{ background: '#eef2f7', padding: '20px', borderRadius: '8px', border: '1px solid #b0c4de', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
@@ -393,6 +376,52 @@ export default function App() {
         </div>
       ) : null}
 
+      {/* ROSTER & QUOTA SETTINGS ADMIN PANEL */}
+      {isStewardUnlocked && isAdminOpen && (
+        <div className="no-print" style={{ background: '#f4f4f4', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ccc' }}>
+          <h3>Staffing & Leave Quota Settings</h3>
+          <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <label style={{ fontSize: '14px', fontWeight: 'bold' }}>Total Office Carriers (for 11%/14% calculations):</label>
+            <input 
+              type="number" 
+              value={totalEmployees} 
+              onChange={(e) => setTotalEmployees(Number(e.target.value))}
+              style={{ padding: '4px 8px', width: '60px', borderRadius: '4px', border: '1px solid #ccc' }}
+            />
+          </div>
+
+          <h4 style={{ margin: '15px 0 8px 0' }}>Add New Carrier</h4>
+          <form onSubmit={handleAddCarrier} style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
+            <input type="text" placeholder="Carrier Name" value={newCarrierName} onChange={(e) => setNewCarrierName(e.target.value)} style={{ padding: '6px', flex: 1 }} />
+            <select value={newCarrierCategory} onChange={(e) => setNewCarrierCategory(Number(e.target.value))} style={{ padding: '6px' }}>
+              <option value={1}>Cat 1 (2 Weeks)</option>
+              <option value={2}>Cat 2 (3 Weeks)</option>
+              <option value={3}>Cat 3 (3 Weeks)</option>
+            </select>
+            <input type="tel" placeholder="Phone" value={newCarrierPhone} onChange={(e) => setNewCarrierPhone(e.target.value)} style={{ padding: '6px', width: '120px' }} />
+            <input type="number" placeholder="Priority #" value={newCarrierRank} onChange={(e) => setNewCarrierRank(e.target.value)} style={{ padding: '6px', width: '80px' }} />
+            <button type="submit" style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }}>Add Carrier</button>
+          </form>
+
+          <h4 style={{ margin: '15px 0 8px 0' }}>Manage Seniority Roster Order</h4>
+          <ul>
+            {sortedCarriers.map((c) => (
+              <li key={c.id} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <strong style={{ minWidth: '120px' }}>{c.name}</strong>
+                <span>Priority Rank:</span>
+                <input 
+                  type="number" 
+                  value={c.seniority_order || 1} 
+                  onChange={(e) => handleUpdateRank(c.id, e.target.value)}
+                  style={{ width: '50px', textAlign: 'center' }}
+                />
+                <button onClick={() => handleRemoveCarrier(c.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>Remove</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {portalMessage && (
         <div style={{ background: '#e2f0fb', color: '#003366', padding: '20px', borderRadius: '8px', border: '1px solid #b0c4de', marginBottom: '20px', textAlign: 'center' }}>
           <h3 style={{ margin: '0 0 6px 0' }}>NALC Branch 366 Portal</h3>
@@ -400,7 +429,7 @@ export default function App() {
         </div>
       )}
 
-      {/* SECURE LANDING (NO CARRIER DROPDOWN BOXES ALLOWED) */}
+      {/* SECURE LANDING (NO CARRIER DROPDOWN BOXES) */}
       {!currentCarrier && !isStewardUnlocked && !portalMessage ? (
         <div className="no-print" style={{ background: '#fff', padding: '30px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto', textAlign: 'center' }}>
           <h2 style={{ color: '#003366', marginTop: 0 }}>Secure Bidding Portal</h2>
