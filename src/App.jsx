@@ -118,26 +118,19 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // AGGRESSIVE RAW URL TOKEN GRABBER
+  // STANDARD QUERY PARAMETER ROUTING WITH PERSISTENT STORAGE
   useEffect(() => {
     if (!isDataLoaded) return;
 
-    const fullUrl = window.location.href;
-    let targetId = null;
+    const params = new URLSearchParams(window.location.search);
+    let targetId = params.get('carrierId') || params.get('id');
 
-    if (fullUrl.includes('id=')) {
-      const parts = fullUrl.split('id=');
-      targetId = parts[1] ? parts[1].split('&')[0].split('#')[0] : null;
-    }
-
-    if (!targetId) {
-      const hash = window.location.hash;
-      if (hash.includes('id=')) {
-        targetId = new URLSearchParams(hash.replace('#?', '?')).get('id');
-      } else {
-        const params = new URLSearchParams(window.location.search);
-        targetId = params.get('carrierId') || params.get('id');
-      }
+    // If URL has the token, save it to localStorage so mobile browser refreshes don't lose it
+    if (targetId) {
+      localStorage.setItem('nalc_active_token', targetId);
+    } else {
+      // Fallback to saved session token if the mobile browser stripped parameters on reload
+      targetId = localStorage.getItem('nalc_active_token');
     }
 
     if (targetId) {
@@ -207,8 +200,8 @@ export default function App() {
   };
 
   const handleManualBidStart = (carrier) => {
-    window.location.hash = `?id=${carrier.id}`;
-    window.location.reload();
+    localStorage.setItem('nalc_active_token', carrier.id);
+    window.location.search = `?carrierId=${carrier.id}`;
   };
 
   const handleSendLinkAndStartTimer = async (carrier) => {
@@ -231,8 +224,9 @@ export default function App() {
       }).eq('id', carrier.id);
     } catch (err) {}
 
+    // Standard query parameter link with a dummy tracking param at the end to prevent text stripping
     const cleanOrigin = window.location.origin.split('/#')[0].split('/?')[0];
-    const portalLink = `${cleanOrigin}/#?id=${carrier.id}`;
+    const portalLink = `${cleanOrigin}/?carrierId=${carrier.id}&t=${Date.now()}`;
 
     const deadlineFormatted = deadline.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! You have until ${deadlineFormatted} to submit your picks: ${portalLink}`);
@@ -326,9 +320,9 @@ export default function App() {
       ).eq('id', currentCarrier.id);
     } catch (err) {}
 
+    localStorage.removeItem('nalc_active_token');
     alert(`Round ${activeRound} selections successfully submitted for ${currentCarrier.name}!`);
-    window.location.hash = '';
-    window.location.reload();
+    window.location.href = window.location.pathname;
   };
 
   const formatWeeksWithDates = (weekNums) => {
@@ -509,7 +503,7 @@ export default function App() {
               <h3 style={{ margin: 0, color: '#155724' }}>Authenticated as: {currentCarrier.name} (Priority #{currentCarrier.seniority_order})</h3>
               <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>Category {currentCarrier.category} — Selected: {selectedWeeks.join(', ') || 'None'}</p>
             </div>
-            <button onClick={() => { window.location.hash = ''; window.location.reload(); }} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Exit</button>
+            <button onClick={() => { localStorage.removeItem('nalc_active_token'); window.location.href = window.location.pathname; }} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Exit</button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '8px', marginBottom: '20px' }}>
