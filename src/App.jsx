@@ -54,9 +54,7 @@ const DEFAULT_ROSTER = [
 ];
 
 export default function App() {
-  // Always start clean and force Supabase to populate live
   const [carriers, setCarriers] = useState(DEFAULT_ROSTER);
-
   const [currentCarrier, setCurrentCarrier] = useState(null);
   const [selectedWeeks, setSelectedWeeks] = useState([]);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
@@ -102,7 +100,6 @@ export default function App() {
     syncData();
   }, []);
 
-  // Check persistent logged-in session, validating live against Supabase carrier data
   useEffect(() => {
     if (!isDataLoaded) return;
     const savedId = localStorage.getItem('nalc_logged_in_carrier');
@@ -319,16 +316,19 @@ export default function App() {
     const fieldToUpdate = activeRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks };
 
     try {
+      // Updated to target by name to safely bypass any ID type mismatches
       const { error } = await supabase
         .from('carriers')
         .update(fieldToUpdate)
-        .eq('id', currentCarrier.id);
+        .eq('name', currentCarrier.name);
 
       if (error) {
-        alert('Error saving to database. Please try again.');
+        console.error('Supabase error:', error.message);
+        alert(`Database error: ${error.message}`);
         return;
       }
     } catch (err) {
+      console.error('Network catch:', err);
       alert('Network error while saving selections.');
       return;
     }
