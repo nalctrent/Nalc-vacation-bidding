@@ -5,18 +5,17 @@ const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || 'https://your-supabase
 const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY || 'your-supabase-anon-key';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Helper function to calculate 48-hour deadline excluding blackout weekend hours (Sat 4 PM to Mon 7:30 AM)
 const calculateBiddingDeadline = (startDate = new Date()) => {
-  const deadline = new Date(startDate.getTime() + 48 * 60 * 60 * 1000); // Base 48 hours
-  const dayOfWeek = startDate.getDay(); // 0 = Sun, 6 = Sat
+  const deadline = new Date(startDate.getTime() + 48 * 60 * 60 * 1000);
+  const dayOfWeek = startDate.getDay();
   const hour = startDate.getHours();
-  const BLACKOUT_MS = 39.5 * 60 * 60 * 1000; // 39.5 hours from Sat 4 PM to Mon 7:30 AM
+  const BLACKOUT_MS = 39.5 * 60 * 60 * 1000;
 
   if (
-    (dayOfWeek === 5 && hour >= 16) || // Friday after 4 PM
-    dayOfWeek === 6 ||                  // Saturday
-    dayOfWeek === 0 ||                  // Sunday
-    (dayOfWeek === 1 && hour < 7)       // Monday before 7:30 AM
+    (dayOfWeek === 5 && hour >= 16) ||
+    dayOfWeek === 6 ||
+    dayOfWeek === 0 ||
+    (dayOfWeek === 1 && hour < 7)
   ) {
     deadline.setTime(deadline.getTime() + BLACKOUT_MS);
   }
@@ -60,8 +59,8 @@ export default function App() {
     const saved = localStorage.getItem('nalc_carriers');
     return saved ? JSON.parse(saved) : DEFAULT_ROSTER;
   });
+
   const [currentCarrier, setCurrentCarrier] = useState(null);
-  
   const [selectedCarrierId, setSelectedCarrierId] = useState('');
   const [selectedWeeks, setSelectedWeeks] = useState([]);
   
@@ -95,7 +94,7 @@ export default function App() {
         saveCarriersState(data);
       }
     } catch (err) {
-      console.warn('Using local storage fallback due to network restriction:', err);
+      console.warn('Using local storage fallback:', err);
     }
   };
 
@@ -107,7 +106,7 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // AUTO-LOGIN VIA PERSONALIZED URL PARAMETER (FORCE OVERRIDE FOR TESTING & REAL USE)
+  // ALWAYS HONORS URL PARAMETER ON EVERY RENDER & REFRESH
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const targetId = params.get('carrierId');
@@ -119,7 +118,7 @@ export default function App() {
         setSelectedWeeks([]);
       }
     }
-  }, [carriers]);
+  }, [carriers, window.location.search]);
 
   const getSlotsForWeek = (weekObj) => {
     if (customSlots[weekObj.weekNum] !== undefined) {
@@ -150,9 +149,7 @@ export default function App() {
           deadline: deadlineStr
         }),
       });
-    } catch (err) {
-      console.error('Failed to trigger notification:', err);
-    }
+    } catch (err) {}
   };
 
   const handleUnlockSteward = () => {
@@ -172,22 +169,10 @@ export default function App() {
       return;
     }
     const found = carriers.find(c => String(c.id) === String(selectedCarrierId));
-    if (!found) {
-      alert('Carrier not found.');
-      return;
-    }
+    if (!found) return;
 
     if (!isStewardUnlocked && activeBiddingCarrier && String(activeBiddingCarrier.id) !== String(found.id)) {
-      alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid in Round ${currentRound}. You cannot bid out of order.`);
-      return;
-    }
-
-    const hasFinishedCurrentRound = currentRound === 1 
-      ? (found.round1Choice && found.round1Choice.length > 0)
-      : (found.round2Choice && found.round2Choice.length > 0);
-
-    if (hasFinishedCurrentRound) {
-      alert(`This carrier has already completed Round ${currentRound}.`);
+      alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid.`);
       return;
     }
 
@@ -229,27 +214,18 @@ export default function App() {
   };
 
   const handleBypassCarrier = async (carrierToBypass) => {
-    if (!confirm(`Are you sure you want to bypass ${carrierToBypass.name} for failing to respond within 48 hours?`)) return;
+    if (!confirm(`Are you sure you want to bypass ${carrierToBypass.name}?`)) return;
 
-    const updatedCarriers = carriers.map(c => {
-      if (c.id === carrierToBypass.id) return { ...c, status: 'bypassed' };
-      return c;
-    });
-
+    const updatedCarriers = carriers.map(c => c.id === carrierToBypass.id ? { ...c, status: 'bypassed' } : c);
     saveCarriersState(updatedCarriers);
     try {
       await supabase.from('carriers').update({ status: 'bypassed' }).eq('id', carrierToBypass.id);
     } catch (err) {}
-
-    alert(`${carrierToBypass.name} has been bypassed. The next carrier can now be notified.`);
   };
 
   const handleAddCarrier = async (e) => {
     e.preventDefault();
-    if (!newCarrierName.trim()) {
-      alert('Please enter a valid Carrier Name.');
-      return;
-    }
+    if (!newCarrierName.trim()) return;
 
     const newCarrier = {
       id: Date.now().toString(),
@@ -268,42 +244,32 @@ export default function App() {
 
     const updated = [...carriers, newCarrier];
     saveCarriersState(updated);
-
-    try {
-      await supabase.from('carriers').insert([newCarrier]);
-    } catch (err) {}
+    try { await supabase.from('carriers').insert([newCarrier]); } catch (err) {}
 
     setNewCarrierName('');
     setNewCarrierPhone('');
     setNewCarrierContact('');
     setNewCarrierRank('');
-    alert(`Added ${newCarrier.name} to the roster!`);
   };
 
   const handleUpdateRank = async (id, newRank) => {
     const updated = carriers.map(c => c.id === id ? { ...c, seniority_order: Number(newRank) } : c);
     saveCarriersState(updated);
-    try {
-      await supabase.from('carriers').update({ seniority_order: Number(newRank) }).eq('id', id);
-    } catch (err) {}
+    try { await supabase.from('carriers').update({ seniority_order: Number(newRank) }).eq('id', id); } catch (err) {}
   };
 
   const handleRemoveCarrier = async (id) => {
-    if (confirm('Are you sure you want to remove this carrier?')) {
+    if (confirm('Remove this carrier?')) {
       const updated = carriers.filter(c => c.id !== id);
       saveCarriersState(updated);
-      try {
-        await supabase.from('carriers').delete().eq('id', id);
-      } catch (err) {}
+      try { await supabase.from('carriers').delete().eq('id', id); } catch (err) {}
     }
   };
 
   const togglePS3971Status = async (carrierId, currentStatus) => {
     const updated = carriers.map(c => c.id === carrierId ? { ...c, ps3971_submitted: !currentStatus } : c);
     saveCarriersState(updated);
-    try {
-      await supabase.from('carriers').update({ ps3971_submitted: !currentStatus }).eq('id', carrierId);
-    } catch (err) {}
+    try { await supabase.from('carriers').update({ ps3971_submitted: !currentStatus }).eq('id', carrierId); } catch (err) {}
   };
 
   const handleWeekClick = (weekNum) => {
@@ -315,23 +281,15 @@ export default function App() {
     }
 
     const carrierHasCompletedRound1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
-    const maxWeeksAllowed = carrierHasCompletedRound1 
-      ? 1 
-      : (currentCarrier.category === 1 ? 2 : 3);
+    const maxWeeksAllowed = carrierHasCompletedRound1 ? 1 : (currentCarrier.category === 1 ? 2 : 3);
 
     if (selectedWeeks.length >= maxWeeksAllowed) {
-      alert(
-        carrierHasCompletedRound1 
-          ? 'Round 2 is strictly limited to 1 week selection.' 
-          : `Category ${currentCarrier.category} carriers are limited to a maximum of ${maxWeeksAllowed} selection(s) in Round 1.`
-      );
+      alert(carrierHasCompletedRound1 ? 'Round 2 is strictly limited to 1 week selection.' : `Category ${currentCarrier.category} is limited to ${maxWeeksAllowed} weeks in Round 1.`);
       return;
     }
 
     const weekObj = CALENDAR_WEEKS.find(w => w.weekNum === weekNum);
-    const maxSlots = getSlotsForWeek(weekObj);
-    const booked = getBookedCount(weekNum);
-    if (booked >= maxSlots) {
+    if (getBookedCount(weekNum) >= getSlotsForWeek(weekObj)) {
       alert('This week has reached its maximum allowable quota slots.');
       return;
     }
@@ -348,51 +306,24 @@ export default function App() {
     const carrierHasCompletedRound1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
     const activeRoundForCarrier = carrierHasCompletedRound1 ? 2 : 1;
 
-    if (activeRoundForCarrier === 1 && selectedWeeks.length === 3) {
-      const [w1, w2, w3] = selectedWeeks;
-      const isAllConsecutive = (w2 === w1 + 1 && w3 === w2 + 1);
-      const isTwoConsecutivePlusOne = (w2 === w1 + 1) || (w3 === w2 + 1);
-
-      if (!isAllConsecutive && !isTwoConsecutivePlusOne) {
-        alert('LMOU Rule Violation: When picking 3 weeks in Round 1, they must either be 3 consecutive weeks OR a 2-week consecutive block plus 1 separate week.');
-        return;
-      }
-    }
-
-    const deadlineStr = currentCarrier.deadline_at 
-      ? new Date(currentCarrier.deadline_at).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-      : 'N/A';
-
     const updatedCarriers = carriers.map(c => {
       if (c.id === currentCarrier.id) {
-        return activeRoundForCarrier === 1 
-          ? { ...c, round1Choice: selectedWeeks } 
-          : { ...c, round2Choice: selectedWeeks };
+        return activeRoundForCarrier === 1 ? { ...c, round1Choice: selectedWeeks } : { ...c, round2Choice: selectedWeeks };
       }
       return c;
     });
 
     saveCarriersState(updatedCarriers);
-
-    const updatePayload = activeRoundForCarrier === 1 
-      ? { round1Choice: selectedWeeks } 
-      : { round2Choice: selectedWeeks };
-
     try {
-      await supabase.from('carriers').update(updatePayload).eq('id', currentCarrier.id);
+      await supabase.from('carriers').update(activeRoundForCarrier === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks }).eq('id', currentCarrier.id);
     } catch (err) {}
 
-    await triggerOfficerAlert(currentCarrier.name, activeRoundForCarrier, selectedWeeks, deadlineStr);
-
-    alert(`Round ${activeRoundForCarrier} bid successfully submitted and locked for ${currentCarrier.name}!`);
+    alert(`Round ${activeRoundForCarrier} bid successfully submitted for ${currentCarrier.name}!`);
     
-    // Clear selections, clear carrier session, and clean URL
+    // Clear session and strip query params ONLY upon successful submission
     setSelectedWeeks([]);
     setCurrentCarrier(null);
-    setSelectedCarrierId('');
-    if (window.history.replaceState) {
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
+    window.location.href = window.location.pathname; // Hard reset URL to main path
   };
 
   const formatWeeksWithDates = (weekNums) => {
@@ -405,61 +336,14 @@ export default function App() {
 
   const handlePrintMasterList = () => {
     const printWindow = window.open('', '_blank');
-    let html = `
-      <html>
-        <head>
-          <title>NALC Branch 366 Master Vacation Roster</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h2 { text-align: center; color: #003366; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
-            th, td { padding: 8px; border: 1px solid #333; text-align: left; }
-            th { background: #003366; color: #fff; }
-            .center { text-align: center; }
-          </style>
-        </head>
-        <body>
-          <h2>NALC Branch 366 — Master Vacation Roster & PS 3971 Tracking</h2>
-          <table>
-            <thead>
-              <tr>
-                <th class="center">Seniority Priority</th>
-                <th>Carrier Name</th>
-                <th class="center">Cat</th>
-                <th>Round 1 Selected Dates</th>
-                <th>Round 2 Selected Dates</th>
-                <th class="center">PS 3971 Submitted</th>
-              </tr>
-            </thead>
-            <tbody>
-    `;
-
-    sortedCarriers.forEach((c) => {
-      const r1Formatted = formatWeeksWithDates(c.round1Choice);
-      const r2Formatted = formatWeeksWithDates(c.round2Choice);
-
-      html += `
-        <tr>
-          <td class="center"><b>Priority #${c.seniority_order || '—'}</b></td>
-          <td><b>${c.name}</b></td>
-          <td class="center">Cat ${c.category}</td>
-          <td>${r1Formatted}</td>
-          <td>${r2Formatted}</td>
-          <td class="center">${c.ps3971_submitted ? '☑ Yes' : '☐ No'}</td>
-        </tr>
-      `;
+    let html = `<html><head><title>Master Roster</title><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:20px;font-size:12px;}th,td{padding:8px;border:1px solid #333;}th{background:#003366;color:#fff;}.center{text-align:center;}</style></head><body><h2>NALC Branch 366 Master Roster</h2><table><thead><tr><th>Priority</th><th>Name</th><th>Cat</th><th>Round 1</th><th>Round 2</th><th>PS 3971</th></tr></thead><tbody>`;
+    sortedCarriers.forEach(c => {
+      html += `<tr><td class="center">#${c.seniority_order}</td><td><b>${c.name}</b></td><td class="center">${c.category}</td><td>${formatWeeksWithDates(c.round1Choice)}</td><td>${formatWeeksWithDates(c.round2Choice)}</td><td class="center">${c.ps3971_submitted ? 'Yes' : 'No'}</td></tr>`;
     });
-
-    html += `
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `;
+    html += `</tbody></table></body></html>`;
     printWindow.document.write(html);
     printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => { printWindow.print(); }, 500);
+    setTimeout(() => printWindow.print(), 500);
   };
 
   return (
@@ -467,7 +351,7 @@ export default function App() {
       <header className="no-print" style={{ background: '#003366', color: '#fff', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
         <h1 style={{ margin: 0, fontSize: '20px' }}>NALC Branch 366 Vacation Bidding Portal</h1>
         <p style={{ margin: '4px 0 0 0', fontSize: '14px' }}>
-          Active Global Round: <strong>Round {currentRound}</strong> | Up Next in Queue: <strong style={{ color: '#ffcc00' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'None'}</strong>
+          Active Global Round: <strong>Round {currentRound}</strong> | Up Next: <strong style={{ color: '#ffcc00' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'None'}</strong>
         </p>
       </header>
 
@@ -482,26 +366,17 @@ export default function App() {
               onChange={(e) => setStewardPinInput(e.target.value)}
               style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', width: '90px', fontSize: '12px' }}
             />
-            <button 
-              onClick={handleUnlockSteward}
-              style={{ background: '#333', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
-            >
+            <button onClick={handleUnlockSteward} style={{ background: '#333', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
               🔒 Steward Access
             </button>
           </div>
         ) : (
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button 
-              onClick={() => setIsStewardView(!isStewardView)} 
-              style={{ background: '#003366', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-            >
+            <button onClick={() => setIsStewardView(!isStewardView)} style={{ background: '#003366', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
               {isStewardView ? '📋 Back to Bidding' : '🛡️ Steward Board'}
             </button>
-            <button 
-              onClick={() => setIsAdminOpen(!isAdminOpen)} 
-              style={{ background: '#555', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer' }}
-            >
-              {isAdminOpen ? 'Close Roster Admin' : '⚙️ Roster & Quota Settings'}
+            <button onClick={() => setIsAdminOpen(!isAdminOpen)} style={{ background: '#555', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer' }}>
+              {isAdminOpen ? 'Close Roster Admin' : '⚙️ Roster Settings'}
             </button>
           </div>
         )}
@@ -510,12 +385,9 @@ export default function App() {
       {isStewardUnlocked && isStewardView ? (
         <div style={{ background: '#eef2f7', padding: '20px', borderRadius: '8px', border: '1px solid #b0c4de', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-            <h2 style={{ margin: 0, color: '#003366' }}>🛡️ Steward & Officer Master Board</h2>
-            <button 
-              onClick={handlePrintMasterList} 
-              style={{ background: '#17a2b8', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-            >
-              🖨️ Print Clean Master List
+            <h2 style={{ margin: 0, color: '#003366' }}>🛡️ Steward Master Board</h2>
+            <button onClick={handlePrintMasterList} style={{ background: '#17a2b8', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+              🖨️ Print Master List
             </button>
           </div>
 
@@ -524,70 +396,26 @@ export default function App() {
               <tr style={{ background: '#003366', color: '#fff', textAlign: 'left', fontSize: '13px' }}>
                 <th style={{ padding: '10px' }}>Priority #</th>
                 <th style={{ padding: '10px' }}>Carrier Name</th>
-                <th style={{ padding: '10px' }}>Status / Deadline</th>
-                <th style={{ padding: '10px', textAlign: 'center' }}>PS 3971 Submitted</th>
-                <th style={{ padding: '10px' }}>Steward Actions</th>
+                <th style={{ padding: '10px' }}>Status</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>PS 3971</th>
+                <th style={{ padding: '10px' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {sortedCarriers.map((c) => {
                 const isCurrentTurn = activeBiddingCarrier && activeBiddingCarrier.id === c.id;
-                const isBypassed = c.status === 'bypassed';
                 const hasFinished = currentRound === 1 ? (c.round1Choice?.length > 0) : (c.round2Choice?.length > 0);
-                
-                let deadlinePassed = false;
-                if (c.deadline_at && !hasFinished && !isBypassed) {
-                  deadlinePassed = new Date() > new Date(c.deadline_at);
-                }
-
                 return (
-                  <tr key={c.id} style={{ borderBottom: '1px solid #ddd', fontSize: '13px', background: isCurrentTurn ? '#fff9e6' : isBypassed ? '#f8d7da' : '#fff' }}>
-                    <td style={{ padding: '10px', fontWeight: 'bold', color: '#003366' }}>Priority #{c.seniority_order || '—'}</td>
-                    <td style={{ padding: '10px', fontWeight: 'bold' }}>
-                      {c.name} {isCurrentTurn && <span style={{ color: '#d9534f', fontSize: '11px' }}>(Up Now)</span>}
-                      {isBypassed && <span style={{ color: '#dc3545', fontSize: '11px' }}> [Bypassed]</span>}
-                    </td>
-                    <td style={{ padding: '10px', fontSize: '12px' }}>
-                      {hasFinished ? (
-                        <span style={{ color: '#28a745', fontWeight: 'bold' }}>✓ Completed</span>
-                      ) : c.deadline_at ? (
-                        <div>
-                          <span>Due: {new Date(c.deadline_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                          {deadlinePassed && <div style={{ color: '#dc3545', fontWeight: 'bold' }}>⚠️ 48hr Overdue!</div>}
-                        </div>
-                      ) : (
-                        <span style={{ color: '#666' }}>Link not sent</span>
-                      )}
-                    </td>
+                  <tr key={c.id} style={{ borderBottom: '1px solid #ddd', fontSize: '13px', background: isCurrentTurn ? '#fff9e6' : '#fff' }}>
+                    <td style={{ padding: '10px', fontWeight: 'bold' }}>#{c.seniority_order}</td>
+                    <td style={{ padding: '10px', fontWeight: 'bold' }}>{c.name} {isCurrentTurn && '(Up Now)'}</td>
+                    <td style={{ padding: '10px' }}>{hasFinished ? '✓ Done' : 'Pending'}</td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>
-                      <input 
-                        type="checkbox" 
-                        checked={!!c.ps3971_submitted} 
-                        onChange={() => togglePS3971Status(c.id, c.ps3971_submitted)}
-                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                      />
+                      <input type="checkbox" checked={!!c.ps3971_submitted} onChange={() => togglePS3971Status(c.id, c.ps3971_submitted)} />
                     </td>
-                    <td style={{ padding: '10px', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <button
-                        onClick={() => handleSendLinkAndStartTimer(c)}
-                        style={{ background: '#28a745', color: '#fff', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
-                      >
-                        💬 Send Link
-                      </button>
-                      <button
-                        onClick={() => handleManualBidStart(c)}
-                        style={{ background: '#ffc107', color: '#000', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
-                      >
-                        ✏️ Manual Bid
-                      </button>
-                      {deadlinePassed && !hasFinished && (
-                        <button
-                          onClick={() => handleBypassCarrier(c)}
-                          style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
-                        >
-                          ⚠️ Bypass
-                        </button>
-                      )}
+                    <td style={{ padding: '10px', display: 'flex', gap: '6px' }}>
+                      <button onClick={() => handleSendLinkAndStartTimer(c)} style={{ background: '#28a745', color: '#fff', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>💬 Send Link</button>
+                      <button onClick={() => handleManualBidStart(c)} style={{ background: '#ffc107', color: '#000', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>✏️ Manual Bid</button>
                     </td>
                   </tr>
                 );
@@ -599,97 +427,59 @@ export default function App() {
 
       {isStewardUnlocked && isAdminOpen && (
         <div className="no-print" style={{ background: '#f4f4f4', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ccc' }}>
-          <h3>Staffing & Leave Quota Settings</h3>
-          
-          <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <label style={{ fontSize: '14px', fontWeight: 'bold' }}>Total Office Carriers (for 11%/14% calculations):</label>
-            <input 
-              type="number" 
-              value={totalEmployees} 
-              onChange={(e) => setTotalEmployees(Number(e.target.value))}
-              style={{ padding: '4px 8px', width: '60px', borderRadius: '4px', border: '1px solid #ccc' }}
-            />
-          </div>
-
-          <form onSubmit={handleAddCarrier} style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-            <input type="text" placeholder="Carrier Name" value={newCarrierName} onChange={(e) => setNewCarrierName(e.target.value)} style={{ padding: '6px', flex: 1 }} />
+          <h3>Settings</h3>
+          <form onSubmit={handleAddCarrier} style={{ display: 'flex', gap: '8px', marginBottom: '15px', flexWrap: 'wrap' }}>
+            <input type="text" placeholder="Name" value={newCarrierName} onChange={(e) => setNewCarrierName(e.target.value)} style={{ padding: '6px', flex: 1 }} />
             <select value={newCarrierCategory} onChange={(e) => setNewCarrierCategory(Number(e.target.value))} style={{ padding: '6px' }}>
-              <option value={1}>Cat 1 (2 Weeks)</option>
-              <option value={2}>Cat 2 (3 Weeks)</option>
-              <option value={3}>Cat 3 (3 Weeks)</option>
+              <option value={1}>Cat 1 (2 Wks)</option>
+              <option value={2}>Cat 2 (3 Wks)</option>
+              <option value={3}>Cat 3 (3 Wks)</option>
             </select>
-            <input type="tel" placeholder="Phone" value={newCarrierPhone} onChange={(e) => setNewCarrierPhone(e.target.value)} style={{ padding: '6px', width: '120px' }} />
-            <input type="number" placeholder="Priority #" value={newCarrierRank} onChange={(e) => setNewCarrierRank(e.target.value)} style={{ padding: '6px', width: '80px' }} />
-            <button type="submit" style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }}>Add Carrier</button>
+            <input type="tel" placeholder="Phone" value={newCarrierPhone} onChange={(e) => setNewCarrierPhone(e.target.value)} style={{ padding: '6px', width: '100px' }} />
+            <input type="number" placeholder="Rank" value={newCarrierRank} onChange={(e) => setNewCarrierRank(e.target.value)} style={{ padding: '6px', width: '60px' }} />
+            <button type="submit" style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px' }}>Add</button>
           </form>
-
-          <h4>Carrier Priority Roster Sequence</h4>
           <ul>
-            {sortedCarriers.map((c) => (
-              <li key={c.id} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <strong style={{ minWidth: '120px' }}>{c.name}</strong>
-                <span>Priority Rank:</span>
-                <input 
-                  type="number" 
-                  value={c.seniority_order || 1} 
-                  onChange={(e) => handleUpdateRank(c.id, e.target.value)}
-                  style={{ width: '50px', textAlign: 'center' }}
-                />
-                <button onClick={() => handleRemoveCarrier(c.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>Remove</button>
+            {sortedCarriers.map(c => (
+              <li key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                <span style={{ width: '120px' }}>{c.name}</span>
+                <input type="number" value={c.seniority_order} onChange={(e) => handleUpdateRank(c.id, e.target.value)} style={{ width: '50px', textAlign: 'center' }} />
+                <button onClick={() => handleRemoveCarrier(c.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 6px', borderRadius: '4px', fontSize: '11px' }}>X</button>
               </li>
             ))}
           </ul>
         </div>
       )}
 
-      {/* FALLBACK MANUAL SELECTOR (ONLY SHOWN IF NO DIRECT LINK IS USED) */}
       {!currentCarrier ? (
         <div className="no-print" style={{ background: '#fff', padding: '24px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto' }}>
           <h2 style={{ color: '#003366', marginTop: 0 }}>Carrier Portal Login</h2>
           <p style={{ fontSize: '14px', color: '#555' }}>
-            Current Bidding Turn: <strong style={{ color: '#d9534f' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'None'}</strong>
+            Current Turn: <strong style={{ color: '#d9534f' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'None'}</strong>
           </p>
-          
           <form onSubmit={handleCarrierLogin}>
             <div style={{ marginBottom: '14px' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Select Name:</label>
-              <select 
-                value={selectedCarrierId} 
-                onChange={(e) => setSelectedCarrierId(e.target.value)}
-                style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px' }}
-              >
+              <select value={selectedCarrierId} onChange={(e) => setSelectedCarrierId(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
                 <option value="">-- Choose Carrier --</option>
                 {sortedCarriers.map(c => (
-                  <option key={c.id} value={c.id}>{c.name} (Priority #{c.seniority_order || '?'})</option>
+                  <option key={c.id} value={c.id}>{c.name} (Priority #{c.seniority_order})</option>
                 ))}
               </select>
             </div>
-
-            <button 
-              type="submit"
-              style={{ width: '100%', background: '#003366', color: '#fff', border: 'none', padding: '12px', borderRadius: '4px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}
-            >
-              Enter Portal & View Calendar
+            <button type="submit" style={{ width: '100%', background: '#003366', color: '#fff', border: 'none', padding: '12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
+              Enter Portal
             </button>
           </form>
         </div>
       ) : (
-        /* BIDDING CALENDAR VIEW */
         <div className="no-print">
-          <div style={{ background: '#d4edda', color: '#155724', padding: '12px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #c3e6cb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ background: '#d4edda', color: '#155724', padding: '12px', borderRadius: '6px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <h3 style={{ margin: 0, color: '#155724' }}>
-                🔓 {isStewardUnlocked ? '✏️ Steward Manual Bid Session for' : 'Authenticated as'} {currentCarrier.name} (Priority #{currentCarrier.seniority_order})
-              </h3>
-              <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>
-                Category {currentCarrier.category} — Selected Weeks: {selectedWeeks.join(', ') || 'None'}
-              </p>
+              <h3 style={{ margin: 0, color: '#155724' }}>Authenticated as: {currentCarrier.name} (Priority #{currentCarrier.seniority_order})</h3>
+              <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>Category {currentCarrier.category} — Selected: {selectedWeeks.join(', ') || 'None'}</p>
             </div>
-            <button 
-              onClick={() => { setCurrentCarrier(null); setSelectedWeeks([]); }}
-              style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
-            >
-              Exit Bidding
+            <button onClick={() => { setCurrentCarrier(null); setSelectedWeeks([]); window.location.href = window.location.pathname; }} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
+              Exit
             </button>
           </div>
 
@@ -710,7 +500,7 @@ export default function App() {
                     borderRadius: '6px',
                     border: isSelected ? '2px solid #001f3f' : '1px solid #ccc',
                     background: isSelected ? '#003366' : isFull ? '#ffe6e6' : week.isPrimeTime ? '#fff8dc' : '#fff',
-                    color: isSelected ? '#ffffff' : isFull ? '#cc0000' : '#000000',
+                    color: isSelected ? '#fff' : isFull ? '#cc0000' : '#000',
                     textAlign: 'center',
                     cursor: (isFull && !isSelected) ? 'not-allowed' : 'pointer',
                   }}
@@ -718,11 +508,9 @@ export default function App() {
                   <div style={{ fontWeight: 'bold', fontSize: '13px' }}>Week {week.weekNum}</div>
                   <div style={{ fontSize: '11px', color: isSelected ? '#e0e0e0' : '#555', margin: '2px 0' }}>{week.dateString}</div>
                   <div style={{ fontSize: '10px', fontWeight: 'bold', color: isSelected ? '#ffcc00' : (week.isPrimeTime ? '#b8860b' : '#666') }}>
-                    {week.isPrimeTime ? '☀️ Prime (June-Aug)' : 'Standard'}
+                    {week.isPrimeTime ? '☀️ Prime' : 'Standard'}
                   </div>
-                  <div style={{ fontSize: '11px', marginTop: '2px', color: isSelected ? '#ffffff' : '#333' }}>
-                    Slots: {booked}/{maxSlots}
-                  </div>
+                  <div style={{ fontSize: '11px', marginTop: '2px' }}>Slots: {booked}/{maxSlots}</div>
                 </button>
               );
             })}
@@ -743,9 +531,7 @@ export default function App() {
               cursor: selectedWeeks.length === 0 ? 'not-allowed' : 'pointer',
             }}
           >
-            {selectedWeeks.length === 0 
-              ? 'Select at least 1 week on the calendar to submit' 
-              : `Submit ${currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0 ? 'Round 2' : 'Round 1'} Selections (${selectedWeeks.length} selected)`}
+            {selectedWeeks.length === 0 ? 'Select at least 1 week to submit' : `Submit Selections (${selectedWeeks.length} selected)`}
           </button>
         </div>
       )}
