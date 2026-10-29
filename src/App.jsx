@@ -24,21 +24,15 @@ const generateYearWeeks = () => {
     const month = start.getMonth();
     const isPrimeTime = month === 5 || month === 6 || month === 7;
 
-    weeks.push({ weekNum: i + 1, dateString, isPrimeTime, startDate: start, endDate: end });
+    weeks.push({ weekNum: i + 1, dateString, isPrimeTime });
   }
   return weeks;
 };
 
 const CALENDAR_WEEKS = generateYearWeeks();
 
-const DEFAULT_ROSTER = [
-  { id: '1', name: 'Trenton Bauer', category: 3, pin: '1234', phone: '4173964312', contact: 'nalctrent@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 1, ps3971_submitted: false },
-  { id: '2', name: 'Jessica', category: 2, pin: '5678', phone: '4173565260', contact: '', round1Choice: [], round2Choice: [], seniority_order: 2, ps3971_submitted: false },
-  { id: '3', name: 'John Doe', category: 1, pin: '0000', phone: '', contact: '', round1Choice: [], round2Choice: [], seniority_order: 3, ps3971_submitted: false }
-];
-
 export default function App() {
-  const [carriers, setCarriers] = useState(DEFAULT_ROSTER);
+  const [carriers, setCarriers] = useState([]);
   const [currentCarrier, setCurrentCarrier] = useState(null);
   
   const [selectedCarrierId, setSelectedCarrierId] = useState('');
@@ -54,8 +48,6 @@ export default function App() {
   const [newCarrierContact, setNewCarrierContact] = useState('');
   const [newCarrierRank, setNewCarrierRank] = useState('');
 
-  const [enteredPin, setEnteredPin] = useState('');
-  const [isPinAuthenticated, setIsPinAuthenticated] = useState(false);
   const [stewardPinInput, setStewardPinInput] = useState('');
   const [isStewardUnlocked, setIsStewardUnlocked] = useState(false);
 
@@ -80,15 +72,20 @@ export default function App() {
   const fetchCarriersFromSupabase = async () => {
     try {
       const { data, error } = await supabase.from('carriers').select('*').order('seniority_order', { ascending: true });
+      if (error) {
+        console.error('Supabase fetch error:', error.message);
+        return;
+      }
       if (data && data.length > 0) {
         setCarriers(data);
-      } else {
-        for (const c of DEFAULT_ROSTER) {
-          await supabase.from('carriers').upsert([c]);
+        // Keep active session matched if already logged in
+        if (currentCarrier) {
+          const updatedCurrent = data.find(c => c.id === currentCarrier.id);
+          if (updatedCurrent) setCurrentCarrier(updatedCurrent);
         }
       }
     } catch (err) {
-      console.warn('Using local roster due to network connection:', err);
+      console.error('Network error fetching carriers:', err);
     }
   };
 
@@ -199,14 +196,13 @@ export default function App() {
       seniority_order: newCarrierRank ? Number(newCarrierRank) : carriers.length + 1
     };
 
-    const updated = [...carriers, newCarrier];
-    setCarriers(updated);
-    try {
-      await supabase.from('carriers').insert([newCarrier]);
-    } catch (err) {
-      console.warn('Cloud sync error:', err);
+    const { error } = await supabase.from('carriers').insert([newCarrier]);
+    if (error) {
+      alert('Database error adding carrier: ' + error.message);
+      return;
     }
 
+    await fetchCarriersFromSupabase();
     setNewCarrierName('');
     setNewCarrierPin('');
     setNewCarrierPhone('');
@@ -279,25 +275,18 @@ export default function App() {
       }
     }
 
-    const updatedCarriers = [...carriers];
-    const targetIndex = updatedCarriers.findIndex(c => c.id === currentCarrier.id);
-    const target = updatedCarriers[targetIndex];
+    const updatePayload = currentRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks };
 
-    if (currentRound === 1) {
-      target.round1Choice = selectedWeeks;
-    } else {
-      target.round2Choice = selectedWeeks;
+    const { error } = await supabase.from('carriers').update(updatePayload).eq('id', currentCarrier.id);
+    if (error) {
+      alert('Database error saving bid: ' + error.message);
+      return;
     }
 
-    await triggerOfficerAlert(target.name, currentRound, selectedWeeks);
+    await triggerOfficerAlert(currentCarrier.name, currentRound, selectedWeeks);
+    await fetchCarriersFromSupabase();
 
-    setCarriers(updatedCarriers);
-    await supabase.from('carriers').update({
-      round1Choice: target.round1Choice,
-      round2Choice: target.round2Choice,
-    }).eq('id', target.id);
-
-    alert('Bid successfully submitted and locked!');
+    alert('Bid successfully submitted and locked to cloud database!');
     setSelectedWeeks([]);
     setCurrentCarrier(null);
     setPinInput('');
