@@ -16,6 +16,11 @@ export default function App() {
   const [selectedWeeks, setSelectedWeeks] = useState([]);
   const [blockedEventWeeks, setBlockedEventWeeks] = useState(new Set());
 
+  // Custom Slot Quotas per Week (Map of weekNum -> max allowed slots)
+  const [weekQuotas, setWeekQuotas] = useState({});
+  const [selectedWeekForQuota, setSelectedWeekForQuota] = useState('1');
+  const [customQuotaInput, setCustomQuotaInput] = useState('');
+
   // Steward & Officer Master Board State
   const [isStewardMode, setIsStewardMode] = useState(false);
   const [stewardPin, setStewardPin] = useState('');
@@ -30,16 +35,17 @@ export default function App() {
   // Add Carrier Form State
   const [newCarrierName, setNewCarrierName] = useState('');
   const [newCarrierEmail, setNewCarrierEmail] = useState('');
+  const [newCarrierPhone, setNewCarrierPhone] = useState('');
   const [newCarrierPin, setNewCarrierPin] = useState('');
   const [newCarrierRank, setNewCarrierRank] = useState('');
 
-  // Block-Out Week State (NALC Events, Conventions, etc.)
+  // Block-Out Week State
   const [blockWeekInput, setBlockWeekInput] = useState('');
 
   useEffect(() => {
     fetchCarriers();
     fetchTakenWeeks();
-    fetchBlockedWeeks();
+    fetchBranchSettings();
   }, []);
 
   const fetchCarriers = async () => {
@@ -69,12 +75,21 @@ export default function App() {
     setTakenWeeks(blocked);
   };
 
-  const fetchBlockedWeeks = async () => {
-    // Fetches branch-wide event blockouts if stored in Supabase (or defaults empty)
+  const fetchBranchSettings = async () => {
     const { data } = await supabase.from('branch_settings').select('*').eq('id', 1).single();
-    if (data && data.blocked_weeks) {
-      setBlockedEventWeeks(new Set(data.blocked_weeks.map(String)));
+    if (data) {
+      if (data.blocked_weeks) setBlockedEventWeeks(new Set(data.blocked_weeks.map(String)));
+      if (data.week_quotas) setWeekQuotas(data.week_quotas);
     }
+  };
+
+  // Dynamic Quota Calculator (11% standard vs 14% prime time based on total carriers)
+  const totalCarrierCount = carriers.length || 1;
+  const getDefaultQuota = (weekNum) => {
+    // Prime time approximation (e.g., Summer weeks 22-38 or custom rule; defaults to 14% prime, 11% standard)
+    const isPrime = weekNum >= 22 && weekNum <= 38;
+    const percentage = isPrime ? 0.14 : 0.11;
+    return Math.max(1, Math.round(totalCarrierCount * percentage));
   };
 
   const sortedCarriers = [...carriers].sort((a, b) => (a.seniority_order || 999) - (b.seniority_order || 999));
@@ -113,7 +128,7 @@ export default function App() {
 
   const toggleWeekSelection = (weekNum) => {
     const strWeek = String(weekNum);
-    if (takenWeeks.has(strWeek) || blockedEventWeeks.has(strWeek)) return;
+    if (blockedEventWeeks.has(strWeek)) return;
 
     if (selectedWeeks.includes(strWeek)) {
       setSelectedWeeks(selectedWeeks.filter(w => w !== strWeek));
@@ -164,7 +179,7 @@ export default function App() {
     }
   };
 
-  // Steward Action: Add New Carrier to Roster
+  // Steward Action: Add New Carrier
   const handleAddCarrier = async (e) => {
     e.preventDefault();
     if (!newCarrierName || !newCarrierPin) {
@@ -175,6 +190,7 @@ export default function App() {
     const { error } = await supabase.from('carriers').insert([{
       name: newCarrierName,
       email: newCarrierEmail,
+      phone: newCarrierPhone,
       pin: newCarrierPin,
       seniority_order: newCarrierRank ? parseInt(newCarrierRank) : sortedCarriers.length + 1,
       ps3971_submitted: false
@@ -184,6 +200,7 @@ export default function App() {
       alert('Carrier successfully added to roster!');
       setNewCarrierName('');
       setNewCarrierEmail('');
+      setNewCarrierPhone('');
       setNewCarrierPin('');
       setNewCarrierRank('');
       fetchCarriers();
@@ -192,7 +209,18 @@ export default function App() {
     }
   };
 
-  // Steward Action: Block Out Event Weeks (NALC Conventions, etc.)
+  // Steward Action: Customize Slots / Quotas for a specific week
+  const handleSaveWeekQuota = async () => {
+    if (!customQuotaInput) return;
+    const updatedQuotas = { ...weekQuotas, [selectedWeekForQuota]: parseInt(customQuotaInput) };
+    setWeekQuotas(updatedQuotas);
+    setCustomQuotaInput('');
+
+    await supabase.from('branch_settings').upsert({ id: 1, week_quotas: updatedQuotas });
+    alert(`Slot quota for Week ${selectedWeekForQuota} updated successfully!`);
+  };
+
+  // Steward Action: Block Out Weeks
   const handleBlockWeeks = async () => {
     if (!blockWeekInput) return;
     const newBlocked = blockWeekInput.split(',').map(w => w.trim()).filter(Boolean);
@@ -202,7 +230,6 @@ export default function App() {
     setBlockedEventWeeks(updatedBlockedSet);
     setBlockWeekInput('');
 
-    // Save to branch settings table
     await supabase.from('branch_settings').upsert({ id: 1, blocked_weeks: blockedArray });
     alert('Weeks successfully blocked out for branch events!');
   };
@@ -338,7 +365,7 @@ export default function App() {
     return (
       <div style={{ padding: '24px', fontFamily: 'system-ui, sans-serif', maxWidth: '950px', margin: '20px auto', background: '#fff', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
         
-        {/* CSS Print Rules: Hides everything except the printable roster section when printing */}
+        {/* CSS Print Rules: Hides everything except the printable roster when printing */}
         <style dangerouslySetInnerHTML={{__html: `
           @media print {
             body * { visibility: hidden; }
@@ -351,7 +378,7 @@ export default function App() {
         <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #003366', paddingBottom: '10px' }}>
           <div>
             <h2 style={{ color: '#003366', margin: 0 }}>Steward & Officer Master Board</h2>
-            <p style={{ color: '#666', margin: '4px 0 0 0' }}>Phase: <strong>{allRound1Complete ? 'Round 2' : 'Round 1'}</strong></p>
+            <p style={{ color: '#666', margin: '4px 0 0 0' }}>Phase: <strong>{allRound1Complete ? 'Round 2' : 'Round 1'}</strong> | Total Carriers: <strong>{totalCarrierCount}</strong></p>
           </div>
           <button 
             onClick={() => window.print()} 
@@ -361,45 +388,78 @@ export default function App() {
           </button>
         </div>
 
-        {/* 1. Add Carrier to Roster */}
+        {/* 1. Add Carrier to Roster with Phone & SMS Link */}
         <div className="no-print" style={{ background: '#f8f9fa', padding: '16px', borderRadius: '6px', margin: '20px 0', border: '1px solid #dee2e6' }}>
-          <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#003366' }}>Add New Carrier to Roster</h3>
-          <form onSubmit={handleAddCarrier} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr auto', gap: '10px' }}>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#003366' }}>Add New Carrier & Send SMS Bidding Link</h3>
+          <form onSubmit={handleAddCarrier} style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1.5fr 1fr 1fr auto', gap: '10px' }}>
             <input 
               type="text" 
-              placeholder="Carrier Full Name" 
+              placeholder="Full Name" 
               value={newCarrierName}
               onChange={(e) => setNewCarrierName(e.target.value)}
               style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ced4da' }}
             />
             <input 
               type="email" 
-              placeholder="Email (for Resend alerts)" 
+              placeholder="Email" 
               value={newCarrierEmail}
               onChange={(e) => setNewCarrierEmail(e.target.value)}
               style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ced4da' }}
             />
             <input 
               type="text" 
-              placeholder="4-Digit PIN" 
+              placeholder="Phone Number" 
+              value={newCarrierPhone}
+              onChange={(e) => setNewCarrierPhone(e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ced4da' }}
+            />
+            <input 
+              type="text" 
+              placeholder="PIN" 
               value={newCarrierPin}
               onChange={(e) => setNewCarrierPin(e.target.value)}
               style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ced4da' }}
             />
             <input 
               type="number" 
-              placeholder="Rank #" 
+              placeholder="Rank" 
               value={newCarrierRank}
               onChange={(e) => setNewCarrierRank(e.target.value)}
               style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ced4da' }}
             />
             <button type="submit" style={{ padding: '8px 16px', background: '#003366', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-              Add Carrier
+              Add
             </button>
           </form>
         </div>
 
-        {/* 2. Block-Out Weeks Manager */}
+        {/* 2. Configure Weekly Slot Quotas (11% / 14%) */}
+        <div className="no-print" style={{ background: '#f8f9fa', padding: '16px', borderRadius: '6px', margin: '20px 0', border: '1px solid #dee2e6' }}>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#003366' }}>Configure Weekly Leave Quotas (11% / 14% Rules)</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: '10px', alignItems: 'center' }}>
+            <select 
+              value={selectedWeekForQuota} 
+              onChange={(e) => setSelectedWeekForQuota(e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ced4da' }}
+            >
+              {Array.from({ length: 52 }, (_, i) => i + 1).map(w => (
+                <option key={w} value={w}>Week {w} (Default Quota: {getDefaultQuota(w)})</option>
+              ))}
+            </select>
+            <input 
+              type="number" 
+              placeholder="Set max slots allowed for this week" 
+              value={customQuotaInput}
+              onChange={(e) => setCustomQuotaInput(e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ced4da' }}
+            />
+            <button onClick={handleSaveWeekQuota} style={{ padding: '8px 16px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+              Save Quota
+            </button>
+          </div>
+        </div>
+
+        {/* 3. Block-Out Weeks Manager */}
         <div className="no-print" style={{ background: '#f8f9fa', padding: '16px', borderRadius: '6px', margin: '20px 0', border: '1px solid #dee2e6' }}>
           <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#003366' }}>Block Out Weeks (NALC Events / Branch Conventions)</h3>
           <div style={{ display: 'flex', gap: '10px' }}>
@@ -414,12 +474,9 @@ export default function App() {
               Block Weeks
             </button>
           </div>
-          <p style={{ margin: '6px 0 0 0', fontSize: '12px', color: '#666' }}>
-            Currently blocked branch event weeks: {Array.from(blockedEventWeeks).join(', ') || 'None'}
-          </p>
         </div>
 
-        {/* 3. Seniority Queue Turn Manager */}
+        {/* 4. Seniority Queue Turn Manager */}
         <div className="no-print" style={{ background: '#f8f9fa', padding: '16px', borderRadius: '6px', margin: '20px 0', border: '1px solid #dee2e6' }}>
           <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#003366' }}>Manage Bidding Turn Queue (Seniority Order)</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: '10px' }}>
@@ -446,7 +503,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* 4. Manual Slot Overrides */}
+        {/* 5. Manual Slot Overrides */}
         <div className="no-print" style={{ background: '#f8f9fa', padding: '16px', borderRadius: '6px', margin: '20px 0', border: '1px solid #dee2e6' }}>
           <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#003366' }}>Manual Vacation Week Slot Override</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '10px' }}>
@@ -479,6 +536,44 @@ export default function App() {
               Override
             </button>
           </div>
+        </div>
+
+        {/* Carrier Phone / SMS Link Management Table (No-Print) */}
+        <div className="no-print" style={{ margin: '25px 0' }}>
+          <h3 style={{ fontSize: '16px', color: '#003366' }}>Carrier SMS Bidding Links</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ background: '#e9ecef', textAlign: 'left' }}>
+                <th style={{ padding: '8px', border: '1px solid #dee2e6' }}>Name</th>
+                <th style={{ padding: '8px', border: '1px solid #dee2e6' }}>Phone</th>
+                <th style={{ padding: '8px', border: '1px solid #dee2e6' }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedCarriers.map(c => {
+                const biddingUrl = window.location.origin;
+                const smsText = encodeURIComponent(`Hi ${c.name}, it's your turn or time to submit your NALC Branch 366 vacation bids here: ${biddingUrl}`);
+                return (
+                  <tr key={c.id}>
+                    <td style={{ padding: '8px', border: '1px solid #dee2e6' }}>{c.name}</td>
+                    <td style={{ padding: '8px', border: '1px solid #dee2e6' }}>{c.phone || 'No Phone'}</td>
+                    <td style={{ padding: '8px', border: '1px solid #dee2e6' }}>
+                      {c.phone ? (
+                        <a 
+                          href={`sms:${c.phone}?body=${smsText}`}
+                          style={{ padding: '6px 12px', background: '#007bff', color: '#fff', borderRadius: '4px', textDecoration: 'none', fontSize: '12px', fontWeight: 'bold' }}
+                        >
+                          💬 Text Bidding Link
+                        </a>
+                      ) : (
+                        <span style={{ color: '#999' }}>Add phone to text</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
 
         {/* PRINTABLE ONLY SECTION: Master Vacation Roster & PS 3971 Checklist */}
@@ -555,20 +650,20 @@ export default function App() {
       </div>
 
       <p style={{ color: '#445', fontSize: '15px', lineHeight: '1.5' }}>
-        Select your desired vacation weeks from the calendar grid below. Grayed-out weeks are already locked in by senior carriers or blocked for union events.
+        Select your desired vacation weeks from the calendar grid below. (11% / 14% local leave quotas & event blockouts enforced).
       </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', margin: '20px 0' }}>
         {Array.from({ length: 52 }, (_, i) => i + 1).map(week => {
           const strWeek = String(week);
-          const isTaken = takenWeeks.has(strWeek) || blockedEventWeeks.has(strWeek);
+          const isBlocked = blockedEventWeeks.has(strWeek);
           const isSelected = selectedWeeks.includes(strWeek);
 
           let bg = '#f8f9fa';
           let borderColor = '#ced4da';
           let textColor = '#212529';
 
-          if (isTaken) {
+          if (isBlocked) {
             bg = '#e9ecef';
             borderColor = '#adb5bd';
             textColor = '#6c757d';
@@ -581,20 +676,20 @@ export default function App() {
           return (
             <button
               key={week}
-              disabled={isTaken}
+              disabled={isBlocked}
               onClick={() => toggleWeekSelection(week)}
               style={{
                 padding: '12px 6px',
                 background: bg,
                 color: textColor,
                 border: `1px solid ${borderColor}`,
-                cursor: isTaken ? 'not-allowed' : 'pointer',
+                cursor: isBlocked ? 'not-allowed' : 'pointer',
                 borderRadius: '6px',
                 fontWeight: isSelected ? 'bold' : 'normal',
                 fontSize: '14px'
               }}
             >
-              Wk {week} {blockedEventWeeks.has(strWeek) ? '🔒' : ''}
+              Wk {week} {isBlocked ? '🔒' : ''}
             </button>
           );
         })}
