@@ -36,7 +36,6 @@ export default function App() {
   const [currentCarrierIndex, setCurrentCarrierIndex] = useState(0);
   const [selectedWeeks, setSelectedWeeks] = useState([]);
   
-  // Roster & Quota Management State
   const [totalEmployees, setTotalEmployees] = useState(30);
   const [customSlots, setCustomSlots] = useState({});
   const [newCarrierName, setNewCarrierName] = useState('');
@@ -45,13 +44,11 @@ export default function App() {
   const [newCarrierPhone, setNewCarrierPhone] = useState('');
   const [newCarrierContact, setNewCarrierContact] = useState('');
 
-  // Security & Authentication
   const [enteredPin, setEnteredPin] = useState('');
   const [isPinAuthenticated, setIsPinAuthenticated] = useState(false);
   const [stewardPinInput, setStewardPinInput] = useState('');
   const [isStewardUnlocked, setIsStewardUnlocked] = useState(false);
 
-  // View States
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isStewardView, setIsStewardView] = useState(false);
   const [activeCarrierParam, setActiveCarrierParam] = useState(null);
@@ -60,9 +57,19 @@ export default function App() {
     fetchCarriersFromSupabase();
     const params = new URLSearchParams(window.location.search);
     const cId = params.get('carrierId');
-    if (cId) {
-      setActiveCarrierParam(cId);
-    }
+    if (cId) setActiveCarrierParam(cId);
+
+    // Real-time Supabase subscription so slot selections sync instantly for all users
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'carriers' }, () => {
+        fetchCarriersFromSupabase();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchCarriersFromSupabase = async () => {
@@ -70,20 +77,12 @@ export default function App() {
       const { data, error } = await supabase.from('carriers').select('*').order('seniority_order', { ascending: true });
       if (data && data.length > 0) {
         setCarriers(data);
-      } else {
-        // Fallback prototype roster
-        setCarriers([
-          { id: '1', name: 'Trenton Bauer', category: 3, pin: '1234', phone: '4173964312', contact: '4173964312@tmomail.net', round1Choice: [], round2Choice: [], round1_submitted_at: null, round2_submitted_at: null, ps3971_submitted: false },
-          { id: '2', name: 'Jessica', category: 2, pin: '5678', phone: '4173565260', contact: '4173565260@txt.att.net', round1Choice: [], round2Choice: [], round1_submitted_at: null, round2_submitted_at: null, ps3971_submitted: false },
-          { id: '3', name: 'John Doe', category: 1, pin: '0000', phone: '', contact: '', round1Choice: [], round2Choice: [], round1_submitted_at: null, round2_submitted_at: null, ps3971_submitted: false }
-        ]);
       }
     } catch (err) {
-      console.warn('Network error loading database, using default roster state.', err);
+      console.error('Error fetching carriers:', err);
     }
   };
 
-  // Determine global round based on whether every carrier has completed Round 1
   const allRound1Complete = carriers.length > 0 && carriers.every(c => c.round1Choice && c.round1Choice.length > 0);
   const currentRound = allRound1Complete ? 2 : 1;
 
@@ -125,7 +124,7 @@ export default function App() {
           selectedWeeks: weeks,
           nextCarrierName: nextCarrier ? nextCarrier.name : 'End of Round',
           nextCarrierLink: nextCarrierLink,
-          nextCarrierContact: nextCarrier ? nextCarrier.contact : '',
+          nextCarrierContact: nextCarrier ? nextCarrier.contact : 'nalctrent@gmail.com',
         }),
       });
     } catch (err) {
@@ -167,11 +166,7 @@ export default function App() {
 
     const updated = [...carriers, newCarrier];
     setCarriers(updated);
-    try {
-      await supabase.from('carriers').insert([newCarrier]);
-    } catch (err) {
-      console.warn('Cloud sync skipped');
-    }
+    await supabase.from('carriers').insert([newCarrier]);
 
     setNewCarrierName('');
     setNewCarrierPin('');
@@ -182,24 +177,15 @@ export default function App() {
 
   const handleRemoveCarrier = async (id) => {
     if (confirm('Are you sure you want to remove this carrier?')) {
-      const updated = carriers.filter(c => c.id !== id);
-      setCarriers(updated);
-      try {
-        await supabase.from('carriers').delete().eq('id', id);
-      } catch (err) {
-        console.warn('Cloud delete skipped');
-      }
+      setCarriers(carriers.filter(c => c.id !== id));
+      await supabase.from('carriers').delete().eq('id', id);
     }
   };
 
   const togglePS3971Status = async (carrierId, currentStatus) => {
     const updated = carriers.map(c => c.id === carrierId ? { ...c, ps3971_submitted: !currentStatus } : c);
     setCarriers(updated);
-    try {
-      await supabase.from('carriers').update({ ps3971_submitted: !currentStatus }).eq('id', carrierId);
-    } catch (err) {
-      console.warn('Cloud update skipped');
-    }
+    await supabase.from('carriers').update({ ps3971_submitted: !currentStatus }).eq('id', carrierId);
   };
 
   const handleVerifyPin = () => {
@@ -224,6 +210,15 @@ export default function App() {
 
     if (selectedWeeks.length >= maxWeeksAllowed) {
       alert(`Category ${currentCarrier.category} carriers are limited to a maximum of ${maxWeeksAllowed} selection(s) in Round ${currentRound}.`);
+      return;
+    }
+
+    // Double-check slot limits in real-time before adding
+    const weekObj = CALENDAR_WEEKS.find(w => w.weekNum === weekNum);
+    const maxSlots = getSlotsForWeek(weekObj);
+    const booked = getBookedCount(weekNum);
+    if (booked >= maxSlots) {
+      alert('This week has reached its maximum allowable quota slots.');
       return;
     }
 
@@ -271,16 +266,12 @@ export default function App() {
     await triggerOfficerAlert(target.name, currentRound, selectedWeeks, nextCarrier);
 
     setCarriers(updatedCarriers);
-    try {
-      await supabase.from('carriers').update({
-        round1Choice: target.round1Choice,
-        round2Choice: target.round2Choice,
-        round1_submitted_at: target.round1_submitted_at,
-        round2_submitted_at: target.round2_submitted_at
-      }).eq('id', target.id);
-    } catch (err) {
-      console.warn('Cloud sync skipped');
-    }
+    await supabase.from('carriers').update({
+      round1Choice: target.round1Choice,
+      round2Choice: target.round2Choice,
+      round1_submitted_at: target.round1_submitted_at,
+      round2_submitted_at: target.round2_submitted_at
+    }).eq('id', target.id);
 
     setSelectedWeeks([]);
     setIsPinAuthenticated(false);
@@ -311,19 +302,71 @@ export default function App() {
     alert(`Personalized link copied for ${carrier.name}!`);
   };
 
+  const handlePrintMasterList = () => {
+    const printWindow = window.open('', '_blank');
+    let html = `
+      <html>
+        <head>
+          <title>NALC Branch 366 Master Vacation Roster</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h2 { text-align: center; color: #003366; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+            th, td { padding: 8px; border: 1px solid #333; text-align: left; }
+            th { background: #003366; color: #fff; }
+            .center { text-align: center; }
+          </style>
+        </head>
+        <body>
+          <h2>NALC Branch 366 — Master Vacation Roster & PS 3971 Tracking</h2>
+          <table>
+            <thead>
+              <tr>
+                <th class="center">Rank</th>
+                <th>Carrier Name</th>
+                <th class="center">Cat</th>
+                <th>Round 1 Weeks & Date</th>
+                <th>Round 2 Weeks & Date</th>
+                <th class="center">PS 3971 Submitted</th>
+              </tr>
+            </thead>
+            <tbody>
+    `;
+
+    carriers.forEach((c, idx) => {
+      const r1 = c.round1Choice && c.round1Choice.length > 0 ? c.round1Choice.join(', ') : 'Pending';
+      const r1Date = c.round1_submitted_at ? new Date(c.round1_submitted_at).toLocaleDateString() : '';
+      const r2 = c.round2Choice && c.round2Choice.length > 0 ? c.round2Choice.join(', ') : 'Pending';
+      const r2Date = c.round2_submitted_at ? new Date(c.round2_submitted_at).toLocaleDateString() : '';
+
+      html += `
+        <tr>
+          <td class="center"><b>#${idx + 1}</b></td>
+          <td><b>${c.name}</b></td>
+          <td class="center">Cat ${c.category}</td>
+          <td>${r1 !== 'Pending' ? `Wks: ${r1} (${r1Date})` : 'Pending'}</td>
+          <td>${r2 !== 'Pending' ? `Wks: ${r2} (${r2Date})` : 'Pending'}</td>
+          <td class="center">${c.ps3971_submitted ? '☑ Yes' : '☐ No'}</td>
+        </tr>
+      `;
+    });
+
+    html += `
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 500);
+  };
+
   return (
     <div style={{ maxWidth: '950px', margin: '0 auto', padding: '16px', fontFamily: 'Arial, sans-serif' }}>
-      
-      {/* CSS Print Rules: Hides controls during print, shows ONLY the clean master roster table */}
-      <style dangerouslySetInnerHTML={{__html: `
-        @media print {
-          body * { visibility: hidden; }
-          #printable-roster, #printable-roster * { visibility: visible; }
-          #printable-roster { position: absolute; left: 0; top: 0; width: 100%; }
-          .no-print { display: none !important; }
-        }
-      `}} />
-
       <header className="no-print" style={{ background: '#003366', color: '#fff', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
         <h1 style={{ margin: 0, fontSize: '20px' }}>NALC Branch 366 Vacation Bidding Portal</h1>
         <p style={{ margin: '4px 0 0 0', fontSize: '14px' }}>
@@ -331,7 +374,6 @@ export default function App() {
         </p>
       </header>
 
-      {/* Footer Navigation Bar for Officer Controls */}
       <div className="no-print" style={{ display: 'flex', gap: '10px', marginBottom: '16px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         {!isStewardUnlocked ? (
           <div style={{ display: 'flex', gap: '6px' }}>
@@ -368,13 +410,12 @@ export default function App() {
         )}
       </div>
 
-      {/* Steward Master View */}
       {isStewardUnlocked && isStewardView ? (
         <div style={{ background: '#eef2f7', padding: '20px', borderRadius: '8px', border: '1px solid #b0c4de', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
             <h2 style={{ margin: 0, color: '#003366' }}>🛡️ Steward & Officer Master Board</h2>
             <button 
-              onClick={() => window.print()} 
+              onClick={handlePrintMasterList} 
               style={{ background: '#17a2b8', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
             >
               🖨️ Print Clean Master List
@@ -438,12 +479,11 @@ export default function App() {
         </div>
       ) : null}
 
-      {/* Admin Section */}
       {isStewardUnlocked && isAdminOpen && (
         <div className="no-print" style={{ background: '#f4f4f4', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ccc' }}>
           <h3>Staffing & Quota Admin</h3>
           
-          <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <label style={{ fontSize: '14px', fontWeight: 'bold' }}>Total Office Carriers (for 11%/14% calculations):</label>
             <input 
               type="number" 
@@ -451,6 +491,24 @@ export default function App() {
               onChange={(e) => setTotalEmployees(Number(e.target.value))}
               style={{ padding: '4px 8px', width: '60px', borderRadius: '4px', border: '1px solid #ccc' }}
             />
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <h4 style={{ margin: '0 0 8px 0' }}>Manually Override Quota Slots Per Week</h4>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {CALENDAR_WEEKS.slice(0, 12).map(w => (
+                <div key={w.weekNum} style={{ background: '#fff', padding: '6px', border: '1px solid #ddd', borderRadius: '4px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 'bold' }}>Wk {w.weekNum}</div>
+                  <input 
+                    type="number" 
+                    value={customSlots[w.weekNum] !== undefined ? customSlots[w.weekNum] : getSlotsForWeek(w)}
+                    onChange={(e) => setCustomSlots({ ...customSlots, [w.weekNum]: Number(e.target.value) })}
+                    style={{ width: '40px', textAlign: 'center', marginTop: '4px' }}
+                  />
+                </div>
+              ))}
+            </div>
+            <span style={{ fontSize: '11px', color: '#666', marginTop: '4px', display: 'block' }}>*(Showing first 12 weeks for quick adjustments; standard rates apply automatically if untouched)*</span>
           </div>
 
           <form onSubmit={handleAddCarrier} style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -528,7 +586,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Bidding View */}
       {(!isStewardView || !isStewardUnlocked) && currentCarrier && (
         <div className="no-print">
           {!isTurnForUrlUser ? (
@@ -623,45 +680,6 @@ export default function App() {
           )}
         </div>
       )}
-
-      {/* HIDDEN PRINT-ONLY MASTER ROSTER LIST */}
-      <div id="printable-roster" style={{ display: 'none', padding: '20px' }}>
-        <h2 style={{ textAlign: 'center', color: '#003366' }}>NALC Branch 366 — Master Vacation Roster & PS 3971 Tracking</h2>
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px', fontSize: '12px' }}>
-          <thead>
-            <tr style={{ background: '#003366', color: '#fff' }}>
-              <th style={{ padding: '8px', border: '1px solid #333' }}>Rank</th>
-              <th style={{ padding: '8px', border: '1px solid #333' }}>Carrier Name</th>
-              <th style={{ padding: '8px', border: '1px solid #333' }}>Cat</th>
-              <th style={{ padding: '8px', border: '1px solid #333' }}>Round 1 Weeks & Date</th>
-              <th style={{ padding: '8px', border: '1px solid #333' }}>Round 2 Weeks & Date</th>
-              <th style={{ padding: '8px', border: '1px solid #333', textAlign: 'center' }}>PS 3971 Submitted</th>
-            </tr>
-          </thead>
-          <tbody>
-            {carriers.map((c, index) => {
-              const r1 = c.round1Choice && c.round1Choice.length > 0 ? c.round1Choice.join(', ') : 'Pending';
-              const r1Date = c.round1_submitted_at ? new Date(c.round1_submitted_at).toLocaleDateString() : '';
-              const r2 = c.round2Choice && c.round2Choice.length > 0 ? c.round2Choice.join(', ') : 'Pending';
-              const r2Date = c.round2_submitted_at ? new Date(c.round2_submitted_at).toLocaleDateString() : '';
-
-              return (
-                <tr key={c.id}>
-                  <td style={{ padding: '8px', border: '1px solid #333', textAlign: 'center', fontWeight: 'bold' }}>#{index + 1}</td>
-                  <td style={{ padding: '8px', border: '1px solid #333' }}>{c.name}</td>
-                  <td style={{ padding: '8px', border: '1px solid #333', textAlign: 'center' }}>Cat {c.category}</td>
-                  <td style={{ padding: '8px', border: '1px solid #333' }}>{r1 !== 'Pending' ? `Wks: ${r1} (${r1Date})` : 'Pending'}</td>
-                  <td style={{ padding: '8px', border: '1px solid #333' }}>{r2 !== 'Pending' ? `Wks: ${r2} (${r2Date})` : 'Pending'}</td>
-                  <td style={{ padding: '8px', border: '1px solid #333', textAlign: 'center' }}>
-                    {c.ps3971_submitted ? '☑ Yes' : '☐ No'}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
     </div>
   );
 }
