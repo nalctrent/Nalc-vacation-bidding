@@ -5,6 +5,9 @@ const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || 'https://your-supabase
 const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY || 'your-supabase-anon-key';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// Hardcoded public deployment URL to prevent Vercel login interception on mobile SMS
+const PUBLIC_APP_URL = 'https://nalc-366.vercel.app';
+
 const calculateBiddingDeadline = (startDate = new Date()) => {
   const deadline = new Date(startDate.getTime() + 48 * 60 * 60 * 1000);
   const dayOfWeek = startDate.getDay();
@@ -118,7 +121,7 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // BULLETPROOF URL TOKEN LOOKUP (TRIMS WHITESPACE AND STRINGS TO PREVENT ID MISMATCHES)
+  // BULLETPROOF URL TOKEN LOOKUP
   useEffect(() => {
     if (!isDataLoaded) return;
 
@@ -205,25 +208,19 @@ export default function App() {
       }).eq('id', carrier.id);
     } catch (err) {}
 
-    const portalLink = `${window.location.origin}${window.location.pathname}?carrierId=${carrier.id}`;
+    // Uses clean production URL domain to avoid Vercel login prompts
+    const portalLink = `${PUBLIC_APP_URL}/?carrierId=${carrier.id}`;
     const deadlineFormatted = deadline.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! You have until ${deadlineFormatted} to submit your picks: ${portalLink}`);
     
     window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
   };
 
-  const handleBypassCarrier = async (carrierToBypass) => {
-    if (!confirm(`Bypass ${carrierToBypass.name}?`)) return;
-    const updated = carriers.map(c => c.id === carrierToBypass.id ? { ...c, status: 'bypassed' } : c);
-    saveCarriersState(updated);
-    try { await supabase.from('carriers').update({ status: 'bypassed' }).eq('id', carrierToBypass.id); } catch (err) {}
-  };
-
   const handleAddCarrier = async (e) => {
     e.preventDefault();
     if (!newCarrierName.trim()) return;
     const newCarrier = {
-      id: Date.now().toString(),
+      id: String(Date.now()),
       name: newCarrierName.trim(),
       category: Number(newCarrierCategory),
       phone: newCarrierPhone.trim(),
@@ -472,7 +469,7 @@ export default function App() {
         </div>
       )}
 
-      {/* SECURE LANDING (NO CARRIER DROPDOWN BOXES) */}
+      {/* SECURE LANDING */}
       {!currentCarrier && !isStewardUnlocked && !portalMessage ? (
         <div className="no-print" style={{ background: '#fff', padding: '30px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto', textAlign: 'center' }}>
           <h2 style={{ color: '#003366', marginTop: 0 }}>Secure Bidding Portal</h2>
