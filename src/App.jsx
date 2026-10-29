@@ -272,8 +272,7 @@ export default function App() {
     try { await supabase.from('carriers').update({ seniority_order: Number(newRank) }).eq('id', id); } catch (err) {}
   };
 
-  // Seniority shifting logic on deletion:
-  // When a carrier is deleted, everyone below their rank goes up one rank (seniority_order decreases by 1)
+  // Seniority shifting logic on deletion
   const handleRemoveCarrier = async (id) => {
     if (confirm('Remove carrier?')) {
       const targetCarrier = carriers.find(c => c.id === id);
@@ -355,17 +354,19 @@ export default function App() {
       return;
     }
 
+    // Email notification dispatch
     try {
+      const resendApiKey = process.env.REACT_APP_RESEND_API_KEY || 're_123456789';
       await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.REACT_APP_RESEND_API_KEY || 'your-resend-api-key'}`
+          'Authorization': `Bearer ${resendApiKey}`
         },
         body: JSON.stringify({
           from: 'NALC Branch 366 <bidding@yourdomain.com>',
           to: ['nalctrent@gmail.com'],
-          subject: `Vacation Bidding Update: ${currentCarrier.name} Completed Round ${activeRound}`,
+          subject: `[BID SUBMITTED] ${currentCarrier.name} completed Round ${activeRound}`,
           html: `<p><strong>${currentCarrier.name}</strong> (Priority #${currentCarrier.seniority_order}) has successfully submitted their picks for <strong>Round ${activeRound}</strong>.</p>
                  <p><strong>Selected Weeks:</strong> ${selectedWeeks.join(', ')}</p>`
         })
