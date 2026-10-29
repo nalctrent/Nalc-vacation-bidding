@@ -5,18 +5,17 @@ const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || 'https://your-supabase
 const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY || 'your-supabase-anon-key';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Helper function to calculate 48-hour deadline excluding blackout weekend hours (Sat 4 PM to Mon 7:30 AM)
 const calculateBiddingDeadline = (startDate = new Date()) => {
-  const deadline = new Date(startDate.getTime() + 48 * 60 * 60 * 1000); // Base 48 hours
-  const dayOfWeek = startDate.getDay(); // 0 = Sun, 6 = Sat
+  const deadline = new Date(startDate.getTime() + 48 * 60 * 60 * 1000);
+  const dayOfWeek = startDate.getDay();
   const hour = startDate.getHours();
-  const BLACKOUT_MS = 39.5 * 60 * 60 * 1000; // 39.5 hours from Sat 4 PM to Mon 7:30 AM
+  const BLACKOUT_MS = 39.5 * 60 * 60 * 1000;
 
   if (
-    (dayOfWeek === 5 && hour >= 16) || // Friday after 4 PM
-    dayOfWeek === 6 ||                  // Saturday
-    dayOfWeek === 0 ||                  // Sunday
-    (dayOfWeek === 1 && hour < 7)       // Monday before 7:30 AM
+    (dayOfWeek === 5 && hour >= 16) ||
+    dayOfWeek === 6 ||
+    dayOfWeek === 0 ||
+    (dayOfWeek === 1 && hour < 7)
   ) {
     deadline.setTime(deadline.getTime() + BLACKOUT_MS);
   }
@@ -38,7 +37,6 @@ const generateYearWeeks = () => {
 
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const dateString = `${monthNames[start.getMonth()]} ${String(start.getDate()).padStart(2, '0')} - ${monthNames[end.getMonth()]} ${String(end.getDate()).padStart(2, '0')}`;
-    
     const month = start.getMonth();
     const isPrimeTime = month === 5 || month === 6 || month === 7;
 
@@ -56,15 +54,22 @@ const DEFAULT_ROSTER = [
 ];
 
 export default function App() {
+  // SYNCHRONOUS INITIALIZATION FROM LOCALSTORAGE TO PREVENT INITIAL FRAME RACE CONDITIONS
   const [carriers, setCarriers] = useState(() => {
-    const saved = localStorage.getItem('nalc_carriers');
-    return saved ? JSON.parse(saved) : DEFAULT_ROSTER;
+    try {
+      const saved = localStorage.getItem('nalc_carriers');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_ROSTER;
   });
 
   const [currentCarrier, setCurrentCarrier] = useState(null);
   const [selectedCarrierId, setSelectedCarrierId] = useState('');
   const [selectedWeeks, setSelectedWeeks] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [turnError, setTurnError] = useState('');
 
   const [totalEmployees, setTotalEmployees] = useState(30);
@@ -81,6 +86,24 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isStewardView, setIsStewardView] = useState(false);
 
+  // STEP 1: FETCH LATEST SUPABASE DATA BEFORE DOING ANYTHING
+  useEffect(() => {
+    const syncData = async () => {
+      try {
+        const { data, error } = await supabase.from('carriers').select('*').order('seniority_order', { ascending: true });
+        if (!error && data && data.length > 0) {
+          setCarriers(data);
+          localStorage.setItem('nalc_carriers', JSON.stringify(data));
+        }
+      } catch (err) {
+        console.warn('Network restriction, using cached local data');
+      } finally {
+        setIsDataLoaded(true);
+      }
+    };
+    syncData();
+  }, []);
+
   const sortedCarriers = [...carriers].sort((a, b) => (a.seniority_order || 999) - (b.seniority_order || 999));
   const allRound1Complete = sortedCarriers.length > 0 && sortedCarriers.every(c => c.round1Choice && c.round1Choice.length > 0);
   const currentRound = allRound1Complete ? 2 : 1;
@@ -89,19 +112,9 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // FETCH SUPABASE DATA FIRST BEFORE EVALUATING TURNS
+  // STEP 2: ONLY EVALUATE LINK & TURN LOCK AFTER DATA IS FULLY LOADED
   useEffect(() => {
-    const initPortal = async () => {
-      setIsLoading(true);
-      await fetchCarriersFromSupabase();
-      setIsLoading(false);
-    };
-    initPortal();
-  }, []);
-
-  // EVALUATE URL PARAMETER AFTER SUPABASE DATA IS LOADED
-  useEffect(() => {
-    if (isLoading) return;
+    if (!isDataLoaded) return;
 
     const params = new URLSearchParams(window.location.search);
     const targetId = params.get('carrierId');
@@ -109,8 +122,10 @@ export default function App() {
     if (targetId && carriers.length > 0) {
       const found = carriers.find(c => String(c.id) === String(targetId));
       if (found) {
+        // Evaluate turn lock against verified data
         if (!isStewardUnlocked && activeBiddingCarrier && String(activeBiddingCarrier.id) !== String(found.id)) {
-          setTurnError(`It is currently Rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid. You cannot bid out of turn.`);
+          setTurnError(`It is currently Rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid. You cannot bid out of order.`);
+          setCurrentCarrier(null);
           return;
         }
 
@@ -120,30 +135,21 @@ export default function App() {
 
         if (hasFinishedRound) {
           setTurnError(`You have already submitted your selections for Round ${currentRound}.`);
+          setCurrentCarrier(null);
           return;
         }
 
+        // Access Granted
         setTurnError('');
         setCurrentCarrier(found);
         setSelectedWeeks([]);
       }
     }
-  }, [isLoading, carriers, activeBiddingCarrier, currentRound, isStewardUnlocked]);
+  }, [isDataLoaded, carriers, activeBiddingCarrier, currentRound, isStewardUnlocked]);
 
   const saveCarriersState = (newCarriers) => {
     setCarriers(newCarriers);
     localStorage.setItem('nalc_carriers', JSON.stringify(newCarriers));
-  };
-
-  const fetchCarriersFromSupabase = async () => {
-    try {
-      const { data, error } = await supabase.from('carriers').select('*').order('seniority_order', { ascending: true });
-      if (!error && data && data.length > 0) {
-        saveCarriersState(data);
-      }
-    } catch (err) {
-      console.warn('Using local storage fallback:', err);
-    }
   };
 
   const getSlotsForWeek = (weekObj) => {
@@ -175,9 +181,7 @@ export default function App() {
           deadline: deadlineStr
         }),
       });
-    } catch (err) {
-      console.error('Failed to trigger notification:', err);
-    }
+    } catch (err) {}
   };
 
   const handleUnlockSteward = () => {
@@ -198,22 +202,10 @@ export default function App() {
       return;
     }
     const found = carriers.find(c => String(c.id) === String(selectedCarrierId));
-    if (!found) {
-      alert('Carrier not found.');
-      return;
-    }
+    if (!found) return;
 
     if (!isStewardUnlocked && activeBiddingCarrier && String(activeBiddingCarrier.id) !== String(found.id)) {
-      alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid in Round ${currentRound}. You cannot bid out of order.`);
-      return;
-    }
-
-    const hasFinishedCurrentRound = currentRound === 1 
-      ? (found.round1Choice && found.round1Choice.length > 0)
-      : (found.round2Choice && found.round2Choice.length > 0);
-
-    if (hasFinishedCurrentRound) {
-      alert(`This carrier has already completed Round ${currentRound}.`);
+      alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid. You cannot bid out of order.`);
       return;
     }
 
@@ -252,27 +244,18 @@ export default function App() {
   };
 
   const handleBypassCarrier = async (carrierToBypass) => {
-    if (!confirm(`Are you sure you want to bypass ${carrierToBypass.name} for failing to respond within 48 hours?`)) return;
+    if (!confirm(`Are you sure you want to bypass ${carrierToBypass.name}?`)) return;
 
-    const updatedCarriers = carriers.map(c => {
-      if (c.id === carrierToBypass.id) return { ...c, status: 'bypassed' };
-      return c;
-    });
-
+    const updatedCarriers = carriers.map(c => c.id === carrierToBypass.id ? { ...c, status: 'bypassed' } : c);
     saveCarriersState(updatedCarriers);
     try {
       await supabase.from('carriers').update({ status: 'bypassed' }).eq('id', carrierToBypass.id);
     } catch (err) {}
-
-    alert(`${carrierToBypass.name} has been bypassed. The next carrier can now be notified.`);
   };
 
   const handleAddCarrier = async (e) => {
     e.preventDefault();
-    if (!newCarrierName.trim()) {
-      alert('Please enter a valid Carrier Name.');
-      return;
-    }
+    if (!newCarrierName.trim()) return;
 
     const newCarrier = {
       id: Date.now().toString(),
@@ -291,42 +274,32 @@ export default function App() {
 
     const updated = [...carriers, newCarrier];
     saveCarriersState(updated);
-
-    try {
-      await supabase.from('carriers').insert([newCarrier]);
-    } catch (err) {}
+    try { await supabase.from('carriers').insert([newCarrier]); } catch (err) {}
 
     setNewCarrierName('');
     setNewCarrierPhone('');
     setNewCarrierContact('');
     setNewCarrierRank('');
-    alert(`Added ${newCarrier.name} to the roster!`);
   };
 
   const handleUpdateRank = async (id, newRank) => {
     const updated = carriers.map(c => c.id === id ? { ...c, seniority_order: Number(newRank) } : c);
     saveCarriersState(updated);
-    try {
-      await supabase.from('carriers').update({ seniority_order: Number(newRank) }).eq('id', id);
-    } catch (err) {}
+    try { await supabase.from('carriers').update({ seniority_order: Number(newRank) }).eq('id', id); } catch (err) {}
   };
 
   const handleRemoveCarrier = async (id) => {
-    if (confirm('Are you sure you want to remove this carrier?')) {
+    if (confirm('Remove this carrier?')) {
       const updated = carriers.filter(c => c.id !== id);
       saveCarriersState(updated);
-      try {
-        await supabase.from('carriers').delete().eq('id', id);
-      } catch (err) {}
+      try { await supabase.from('carriers').delete().eq('id', id); } catch (err) {}
     }
   };
 
   const togglePS3971Status = async (carrierId, currentStatus) => {
     const updated = carriers.map(c => c.id === carrierId ? { ...c, ps3971_submitted: !currentStatus } : c);
     saveCarriersState(updated);
-    try {
-      await supabase.from('carriers').update({ ps3971_submitted: !currentStatus }).eq('id', carrierId);
-    } catch (err) {}
+    try { await supabase.from('carriers').update({ ps3971_submitted: !currentStatus }).eq('id', carrierId); } catch (err) {}
   };
 
   const handleWeekClick = (weekNum) => {
@@ -338,23 +311,15 @@ export default function App() {
     }
 
     const carrierHasCompletedRound1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
-    const maxWeeksAllowed = carrierHasCompletedRound1 
-      ? 1 
-      : (currentCarrier.category === 1 ? 2 : 3);
+    const maxWeeksAllowed = carrierHasCompletedRound1 ? 1 : (currentCarrier.category === 1 ? 2 : 3);
 
     if (selectedWeeks.length >= maxWeeksAllowed) {
-      alert(
-        carrierHasCompletedRound1 
-          ? 'Round 2 is strictly limited to 1 week selection.' 
-          : `Category ${currentCarrier.category} carriers are limited to a maximum of ${maxWeeksAllowed} selection(s) in Round 1.`
-      );
+      alert(carrierHasCompletedRound1 ? 'Round 2 is strictly limited to 1 week selection.' : `Category ${currentCarrier.category} is limited to ${maxWeeksAllowed} weeks in Round 1.`);
       return;
     }
 
     const weekObj = CALENDAR_WEEKS.find(w => w.weekNum === weekNum);
-    const maxSlots = getSlotsForWeek(weekObj);
-    const booked = getBookedCount(weekNum);
-    if (booked >= maxSlots) {
+    if (getBookedCount(weekNum) >= getSlotsForWeek(weekObj)) {
       alert('This week has reached its maximum allowable quota slots.');
       return;
     }
@@ -363,55 +328,31 @@ export default function App() {
   };
 
   const handleSubmitBid = async () => {
-    if (selectedWeeks.length === 0 || !currentCarrier) {
-      alert('Please select at least one week before submitting.');
-      return;
-    }
+    if (selectedWeeks.length === 0 || !currentCarrier) return;
 
     const carrierHasCompletedRound1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
     const activeRoundForCarrier = carrierHasCompletedRound1 ? 2 : 1;
 
-    if (activeRoundForCarrier === 1 && selectedWeeks.length === 3) {
-      const [w1, w2, w3] = selectedWeeks;
-      const isAllConsecutive = (w2 === w1 + 1 && w3 === w2 + 1);
-      const isTwoConsecutivePlusOne = (w2 === w1 + 1) || (w3 === w2 + 1);
-
-      if (!isAllConsecutive && !isTwoConsecutivePlusOne) {
-        alert('LMOU Rule Violation: When picking 3 weeks in Round 1, they must either be 3 consecutive weeks OR a 2-week consecutive block plus 1 separate week.');
-        return;
-      }
-    }
-
-    const deadlineStr = currentCarrier.deadline_at 
-      ? new Date(currentCarrier.deadline_at).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-      : 'N/A';
-
     const updatedCarriers = carriers.map(c => {
       if (c.id === currentCarrier.id) {
-        return activeRoundForCarrier === 1 
-          ? { ...c, round1Choice: selectedWeeks } 
-          : { ...c, round2Choice: selectedWeeks };
+        return activeRoundForCarrier === 1 ? { ...c, round1Choice: selectedWeeks } : { ...c, round2Choice: selectedWeeks };
       }
       return c;
     });
 
+    // Save locally
     saveCarriersState(updatedCarriers);
 
-    const updatePayload = activeRoundForCarrier === 1 
-      ? { round1Choice: selectedWeeks } 
-      : { round2Choice: selectedWeeks };
-
+    // Hard sync to Supabase before navigating away
     try {
-      await supabase.from('carriers').update(updatePayload).eq('id', currentCarrier.id);
+      await supabase.from('carriers').update(
+        activeRoundForCarrier === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks }
+      ).eq('id', currentCarrier.id);
     } catch (err) {}
 
-    await triggerOfficerAlert(currentCarrier.name, activeRoundForCarrier, selectedWeeks, deadlineStr);
-
-    alert(`Round ${activeRoundForCarrier} bid successfully submitted and locked for ${currentCarrier.name}!`);
+    alert(`Bid submitted and locked for ${currentCarrier.name}!`);
     
-    // Clear session and hard reset URL cleanly
-    setSelectedWeeks([]);
-    setCurrentCarrier(null);
+    // Hard reset URL to clear session cleanly
     window.location.href = window.location.pathname;
   };
 
@@ -425,67 +366,20 @@ export default function App() {
 
   const handlePrintMasterList = () => {
     const printWindow = window.open('', '_blank');
-    let html = `
-      <html>
-        <head>
-          <title>NALC Branch 366 Master Vacation Roster</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h2 { text-align: center; color: #003366; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
-            th, td { padding: 8px; border: 1px solid #333; text-align: left; }
-            th { background: #003366; color: #fff; }
-            .center { text-align: center; }
-          </style>
-        </head>
-        <body>
-          <h2>NALC Branch 366 — Master Vacation Roster & PS 3971 Tracking</h2>
-          <table>
-            <thead>
-              <tr>
-                <th class="center">Seniority Priority</th>
-                <th>Carrier Name</th>
-                <th class="center">Cat</th>
-                <th>Round 1 Selected Dates</th>
-                <th>Round 2 Selected Dates</th>
-                <th class="center">PS 3971 Submitted</th>
-              </tr>
-            </thead>
-            <tbody>
-    `;
-
-    sortedCarriers.forEach((c) => {
-      const r1Formatted = formatWeeksWithDates(c.round1Choice);
-      const r2Formatted = formatWeeksWithDates(c.round2Choice);
-
-      html += `
-        <tr>
-          <td class="center"><b>Priority #${c.seniority_order || '—'}</b></td>
-          <td><b>${c.name}</b></td>
-          <td class="center">Cat ${c.category}</td>
-          <td>${r1Formatted}</td>
-          <td>${r2Formatted}</td>
-          <td class="center">${c.ps3971_submitted ? '☑ Yes' : '☐ No'}</td>
-        </tr>
-      `;
+    let html = `<html><head><title>Master Roster</title><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:20px;font-size:12px;}th,td{padding:8px;border:1px solid #333;}th{background:#003366;color:#fff;}.center{text-align:center;}</style></head><body><h2>NALC Branch 366 Master Roster</h2><table><thead><tr><th>Priority</th><th>Name</th><th>Cat</th><th>Round 1</th><th>Round 2</th><th>PS 3971</th></tr></thead><tbody>`;
+    sortedCarriers.forEach(c => {
+      html += `<tr><td class="center">#${c.seniority_order}</td><td><b>${c.name}</b></td><td class="center">${c.category}</td><td>${formatWeeksWithDates(c.round1Choice)}</td><td>${formatWeeksWithDates(c.round2Choice)}</td><td class="center">${c.ps3971_submitted ? 'Yes' : 'No'}</td></tr>`;
     });
-
-    html += `
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `;
+    html += `</tbody></table></body></html>`;
     printWindow.document.write(html);
     printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => { printWindow.print(); }, 500);
+    setTimeout(() => printWindow.print(), 500);
   };
 
-  if (isLoading) {
+  if (!isDataLoaded) {
     return (
       <div style={{ textAlign: 'center', padding: '50px', fontFamily: 'Arial' }}>
-        <h2>Loading NALC Branch 366 Portal...</h2>
+        <h2>Syncing NALC Branch 366 Roster...</h2>
       </div>
     );
   }
@@ -495,7 +389,7 @@ export default function App() {
       <header className="no-print" style={{ background: '#003366', color: '#fff', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
         <h1 style={{ margin: 0, fontSize: '20px' }}>NALC Branch 366 Vacation Bidding Portal</h1>
         <p style={{ margin: '4px 0 0 0', fontSize: '14px' }}>
-          Active Global Round: <strong>Round {currentRound}</strong> | Up Next in Queue: <strong style={{ color: '#ffcc00' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'None'}</strong>
+          Active Global Round: <strong>Round {currentRound}</strong> | Up Next in Queue: <strong style={{ color: '#ffcc00' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'All Completed'}</strong>
         </p>
       </header>
 
@@ -673,7 +567,7 @@ export default function App() {
       {/* TURN ERROR ALERT */}
       {turnError && (
         <div style={{ background: '#f8d7da', color: '#721c24', padding: '16px', borderRadius: '8px', border: '1px solid #f5c6cb', marginBottom: '20px', textAlign: 'center' }}>
-          <h3 style={{ margin: '0 0 6px 0' }}>⚠️ Turn Lock Active</h3>
+          <h3 style={{ margin: '0 0 6px 0' }}>⚠️ Bidding Notice</h3>
           <p style={{ margin: 0 }}>{turnError}</p>
         </div>
       )}
@@ -683,7 +577,7 @@ export default function App() {
         <div className="no-print" style={{ background: '#fff', padding: '24px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto' }}>
           <h2 style={{ color: '#003366', marginTop: 0 }}>Carrier Portal Login</h2>
           <p style={{ fontSize: '14px', color: '#555' }}>
-            Current Bidding Turn: <strong style={{ color: '#d9534f' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'None'}</strong>
+            Current Bidding Turn: <strong style={{ color: '#d9534f' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'All Completed'}</strong>
           </p>
           
           <form onSubmit={handleCarrierLogin}>
