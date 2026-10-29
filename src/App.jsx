@@ -54,7 +54,6 @@ const DEFAULT_ROSTER = [
 ];
 
 export default function App() {
-  // SYNCHRONOUS INITIALIZATION FROM LOCALSTORAGE TO PREVENT INITIAL FRAME RACE CONDITIONS
   const [carriers, setCarriers] = useState(() => {
     try {
       const saved = localStorage.getItem('nalc_carriers');
@@ -86,7 +85,6 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isStewardView, setIsStewardView] = useState(false);
 
-  // STEP 1: FETCH LATEST SUPABASE DATA BEFORE DOING ANYTHING
   useEffect(() => {
     const syncData = async () => {
       try {
@@ -96,7 +94,7 @@ export default function App() {
           localStorage.setItem('nalc_carriers', JSON.stringify(data));
         }
       } catch (err) {
-        console.warn('Network restriction, using cached local data');
+        console.warn('Using local storage fallback');
       } finally {
         setIsDataLoaded(true);
       }
@@ -112,7 +110,7 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // STEP 2: ONLY EVALUATE LINK & TURN LOCK AFTER DATA IS FULLY LOADED
+  // DIRECT URL LINK LOGIN (TRUST THE SMS LINK TOKEN WITHOUT FALSE TURN LOCKS)
   useEffect(() => {
     if (!isDataLoaded) return;
 
@@ -122,30 +120,22 @@ export default function App() {
     if (targetId && carriers.length > 0) {
       const found = carriers.find(c => String(c.id) === String(targetId));
       if (found) {
-        // Evaluate turn lock against verified data
-        if (!isStewardUnlocked && activeBiddingCarrier && String(activeBiddingCarrier.id) !== String(found.id)) {
-          setTurnError(`It is currently Rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid. You cannot bid out of order.`);
-          setCurrentCarrier(null);
-          return;
-        }
-
         const hasFinishedRound = currentRound === 1 
           ? (found.round1Choice && found.round1Choice.length > 0)
           : (found.round2Choice && found.round2Choice.length > 0);
 
-        if (hasFinishedRound) {
-          setTurnError(`You have already submitted your selections for Round ${currentRound}.`);
+        if (hasFinishedRound && !isStewardUnlocked) {
+          setTurnError(`${found.name}, you have already submitted your selections for Round ${currentRound}.`);
           setCurrentCarrier(null);
           return;
         }
 
-        // Access Granted
         setTurnError('');
         setCurrentCarrier(found);
         setSelectedWeeks([]);
       }
     }
-  }, [isDataLoaded, carriers, activeBiddingCarrier, currentRound, isStewardUnlocked]);
+  }, [isDataLoaded, carriers, currentRound, isStewardUnlocked]);
 
   const saveCarriersState = (newCarriers) => {
     setCarriers(newCarriers);
@@ -191,7 +181,7 @@ export default function App() {
       setStewardPinInput('');
       setTurnError('');
     } else {
-      alert('Unauthorized access. Invalid Officer PIN.');
+      alert('Invalid Officer PIN.');
     }
   };
 
@@ -204,8 +194,9 @@ export default function App() {
     const found = carriers.find(c => String(c.id) === String(selectedCarrierId));
     if (!found) return;
 
+    // Strict turn lock ONLY applies to manual dropdown logins
     if (!isStewardUnlocked && activeBiddingCarrier && String(activeBiddingCarrier.id) !== String(found.id)) {
-      alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid. You cannot bid out of order.`);
+      alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid.`);
       return;
     }
 
@@ -340,10 +331,7 @@ export default function App() {
       return c;
     });
 
-    // Save locally
     saveCarriersState(updatedCarriers);
-
-    // Hard sync to Supabase before navigating away
     try {
       await supabase.from('carriers').update(
         activeRoundForCarrier === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks }
@@ -351,8 +339,6 @@ export default function App() {
     } catch (err) {}
 
     alert(`Bid submitted and locked for ${currentCarrier.name}!`);
-    
-    // Hard reset URL to clear session cleanly
     window.location.href = window.location.pathname;
   };
 
@@ -377,11 +363,7 @@ export default function App() {
   };
 
   if (!isDataLoaded) {
-    return (
-      <div style={{ textAlign: 'center', padding: '50px', fontFamily: 'Arial' }}>
-        <h2>Syncing NALC Branch 366 Roster...</h2>
-      </div>
-    );
+    return <div style={{ textAlign: 'center', padding: '50px', fontFamily: 'Arial' }}><h2>Syncing NALC Branch 366 Roster...</h2></div>;
   }
 
   return (
@@ -389,42 +371,20 @@ export default function App() {
       <header className="no-print" style={{ background: '#003366', color: '#fff', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
         <h1 style={{ margin: 0, fontSize: '20px' }}>NALC Branch 366 Vacation Bidding Portal</h1>
         <p style={{ margin: '4px 0 0 0', fontSize: '14px' }}>
-          Active Global Round: <strong>Round {currentRound}</strong> | Up Next in Queue: <strong style={{ color: '#ffcc00' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'All Completed'}</strong>
+          Active Global Round: <strong>Round {currentRound}</strong> | Up Next: <strong style={{ color: '#ffcc00' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'All Completed'}</strong>
         </p>
       </header>
 
       <div className="no-print" style={{ display: 'flex', gap: '10px', marginBottom: '16px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         {!isStewardUnlocked ? (
           <div style={{ display: 'flex', gap: '6px' }}>
-            <input 
-              type="password" 
-              maxLength={6} 
-              placeholder="Officer PIN" 
-              value={stewardPinInput}
-              onChange={(e) => setStewardPinInput(e.target.value)}
-              style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', width: '90px', fontSize: '12px' }}
-            />
-            <button 
-              onClick={handleUnlockSteward}
-              style={{ background: '#333', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
-            >
-              🔒 Steward Access
-            </button>
+            <input type="password" maxLength={6} placeholder="Officer PIN" value={stewardPinInput} onChange={(e) => setStewardPinInput(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', width: '90px', fontSize: '12px' }} />
+            <button onClick={handleUnlockSteward} style={{ background: '#333', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>🔒 Steward Access</button>
           </div>
         ) : (
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button 
-              onClick={() => setIsStewardView(!isStewardView)} 
-              style={{ background: '#003366', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-            >
-              {isStewardView ? '📋 Back to Bidding' : '🛡️ Steward Board'}
-            </button>
-            <button 
-              onClick={() => setIsAdminOpen(!isAdminOpen)} 
-              style={{ background: '#555', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer' }}
-            >
-              {isAdminOpen ? 'Close Roster Admin' : '⚙️ Roster & Quota Settings'}
-            </button>
+            <button onClick={() => setIsStewardView(!isStewardView)} style={{ background: '#003366', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{isStewardView ? '📋 Back to Bidding' : '🛡️ Steward Board'}</button>
+            <button onClick={() => setIsAdminOpen(!isAdminOpen)} style={{ background: '#555', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer' }}>{isAdminOpen ? 'Close Admin' : '⚙️ Settings'}</button>
           </div>
         )}
       </div>
@@ -433,12 +393,7 @@ export default function App() {
         <div style={{ background: '#eef2f7', padding: '20px', borderRadius: '8px', border: '1px solid #b0c4de', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
             <h2 style={{ margin: 0, color: '#003366' }}>🛡️ Steward & Officer Master Board</h2>
-            <button 
-              onClick={handlePrintMasterList} 
-              style={{ background: '#17a2b8', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-            >
-              🖨️ Print Clean Master List
-            </button>
+            <button onClick={handlePrintMasterList} style={{ background: '#17a2b8', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>🖨️ Print Master List</button>
           </div>
 
           <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: '6px', overflow: 'hidden' }}>
@@ -446,70 +401,24 @@ export default function App() {
               <tr style={{ background: '#003366', color: '#fff', textAlign: 'left', fontSize: '13px' }}>
                 <th style={{ padding: '10px' }}>Priority #</th>
                 <th style={{ padding: '10px' }}>Carrier Name</th>
-                <th style={{ padding: '10px' }}>Status / Deadline</th>
-                <th style={{ padding: '10px', textAlign: 'center' }}>PS 3971 Submitted</th>
-                <th style={{ padding: '10px' }}>Steward Actions</th>
+                <th style={{ padding: '10px' }}>Status</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>PS 3971</th>
+                <th style={{ padding: '10px' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {sortedCarriers.map((c) => {
                 const isCurrentTurn = activeBiddingCarrier && activeBiddingCarrier.id === c.id;
-                const isBypassed = c.status === 'bypassed';
                 const hasFinished = currentRound === 1 ? (c.round1Choice?.length > 0) : (c.round2Choice?.length > 0);
-                
-                let deadlinePassed = false;
-                if (c.deadline_at && !hasFinished && !isBypassed) {
-                  deadlinePassed = new Date() > new Date(c.deadline_at);
-                }
-
                 return (
-                  <tr key={c.id} style={{ borderBottom: '1px solid #ddd', fontSize: '13px', background: isCurrentTurn ? '#fff9e6' : isBypassed ? '#f8d7da' : '#fff' }}>
-                    <td style={{ padding: '10px', fontWeight: 'bold', color: '#003366' }}>Priority #{c.seniority_order || '—'}</td>
-                    <td style={{ padding: '10px', fontWeight: 'bold' }}>
-                      {c.name} {isCurrentTurn && <span style={{ color: '#d9534f', fontSize: '11px' }}>(Up Now)</span>}
-                      {isBypassed && <span style={{ color: '#dc3545', fontSize: '11px' }}> [Bypassed]</span>}
-                    </td>
-                    <td style={{ padding: '10px', fontSize: '12px' }}>
-                      {hasFinished ? (
-                        <span style={{ color: '#28a745', fontWeight: 'bold' }}>✓ Completed</span>
-                      ) : c.deadline_at ? (
-                        <div>
-                          <span>Due: {new Date(c.deadline_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                          {deadlinePassed && <div style={{ color: '#dc3545', fontWeight: 'bold' }}>⚠️ 48hr Overdue!</div>}
-                        </div>
-                      ) : (
-                        <span style={{ color: '#666' }}>Link not sent</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '10px', textAlign: 'center' }}>
-                      <input 
-                        type="checkbox" 
-                        checked={!!c.ps3971_submitted} 
-                        onChange={() => togglePS3971Status(c.id, c.ps3971_submitted)}
-                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                      />
-                    </td>
-                    <td style={{ padding: '10px', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <button
-                        onClick={() => handleSendLinkAndStartTimer(c)}
-                        style={{ background: '#28a745', color: '#fff', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
-                      >
-                        💬 Send Link
-                      </button>
-                      <button
-                        onClick={() => handleManualBidStart(c)}
-                        style={{ background: '#ffc107', color: '#000', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
-                      >
-                        ✏️ Manual Bid
-                      </button>
-                      {deadlinePassed && !hasFinished && (
-                        <button
-                          onClick={() => handleBypassCarrier(c)}
-                          style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
-                        >
-                          ⚠️ Bypass
-                        </button>
-                      )}
+                  <tr key={c.id} style={{ borderBottom: '1px solid #ddd', fontSize: '13px', background: isCurrentTurn ? '#fff9e6' : '#fff' }}>
+                    <td style={{ padding: '10px', fontWeight: 'bold' }}>#{c.seniority_order}</td>
+                    <td style={{ padding: '10px', fontWeight: 'bold' }}>{c.name} {isCurrentTurn && '(Up Now)'}</td>
+                    <td style={{ padding: '10px' }}>{hasFinished ? '✓ Completed' : 'Pending'}</td>
+                    <td style={{ padding: '10px', textAlign: 'center' }}><input type="checkbox" checked={!!c.ps3971_submitted} onChange={() => togglePS3971Status(c.id, c.ps3971_submitted)} /></td>
+                    <td style={{ padding: '10px', display: 'flex', gap: '6px' }}>
+                      <button onClick={() => handleSendLinkAndStartTimer(c)} style={{ background: '#28a745', color: '#fff', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>💬 Send Link</button>
+                      <button onClick={() => handleManualBidStart(c)} style={{ background: '#ffc107', color: '#000', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>✏️ Bid</button>
                     </td>
                   </tr>
                 );
@@ -519,108 +428,36 @@ export default function App() {
         </div>
       ) : null}
 
-      {isStewardUnlocked && isAdminOpen && (
-        <div className="no-print" style={{ background: '#f4f4f4', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ccc' }}>
-          <h3>Staffing & Leave Quota Settings</h3>
-          
-          <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <label style={{ fontSize: '14px', fontWeight: 'bold' }}>Total Office Carriers (for 11%/14% calculations):</label>
-            <input 
-              type="number" 
-              value={totalEmployees} 
-              onChange={(e) => setTotalEmployees(Number(e.target.value))}
-              style={{ padding: '4px 8px', width: '60px', borderRadius: '4px', border: '1px solid #ccc' }}
-            />
-          </div>
-
-          <form onSubmit={handleAddCarrier} style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-            <input type="text" placeholder="Carrier Name" value={newCarrierName} onChange={(e) => setNewCarrierName(e.target.value)} style={{ padding: '6px', flex: 1 }} />
-            <select value={newCarrierCategory} onChange={(e) => setNewCarrierCategory(Number(e.target.value))} style={{ padding: '6px' }}>
-              <option value={1}>Cat 1 (2 Weeks)</option>
-              <option value={2}>Cat 2 (3 Weeks)</option>
-              <option value={3}>Cat 3 (3 Weeks)</option>
-            </select>
-            <input type="tel" placeholder="Phone" value={newCarrierPhone} onChange={(e) => setNewCarrierPhone(e.target.value)} style={{ padding: '6px', width: '120px' }} />
-            <input type="number" placeholder="Priority #" value={newCarrierRank} onChange={(e) => setNewCarrierRank(e.target.value)} style={{ padding: '6px', width: '80px' }} />
-            <button type="submit" style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }}>Add Carrier</button>
-          </form>
-
-          <h4>Carrier Priority Roster Sequence</h4>
-          <ul>
-            {sortedCarriers.map((c) => (
-              <li key={c.id} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <strong style={{ minWidth: '120px' }}>{c.name}</strong>
-                <span>Priority Rank:</span>
-                <input 
-                  type="number" 
-                  value={c.seniority_order || 1} 
-                  onChange={(e) => handleUpdateRank(c.id, e.target.value)}
-                  style={{ width: '50px', textAlign: 'center' }}
-                />
-                <button onClick={() => handleRemoveCarrier(c.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>Remove</button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* TURN ERROR ALERT */}
       {turnError && (
         <div style={{ background: '#f8d7da', color: '#721c24', padding: '16px', borderRadius: '8px', border: '1px solid #f5c6cb', marginBottom: '20px', textAlign: 'center' }}>
-          <h3 style={{ margin: '0 0 6px 0' }}>⚠️ Bidding Notice</h3>
+          <h3 style={{ margin: '0 0 6px 0' }}>⚠️ Notice</h3>
           <p style={{ margin: 0 }}>{turnError}</p>
         </div>
       )}
 
-      {/* FALLBACK MANUAL SELECTOR */}
       {!currentCarrier ? (
         <div className="no-print" style={{ background: '#fff', padding: '24px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto' }}>
           <h2 style={{ color: '#003366', marginTop: 0 }}>Carrier Portal Login</h2>
-          <p style={{ fontSize: '14px', color: '#555' }}>
-            Current Bidding Turn: <strong style={{ color: '#d9534f' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'All Completed'}</strong>
-          </p>
+          <p style={{ fontSize: '14px', color: '#555' }}>Current Turn: <strong style={{ color: '#d9534f' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'All Completed'}</strong></p>
           
           <form onSubmit={handleCarrierLogin}>
             <div style={{ marginBottom: '14px' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Select Name:</label>
-              <select 
-                value={selectedCarrierId} 
-                onChange={(e) => setSelectedCarrierId(e.target.value)}
-                style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px' }}
-              >
+              <select value={selectedCarrierId} onChange={(e) => setSelectedCarrierId(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
                 <option value="">-- Choose Carrier --</option>
-                {sortedCarriers.map(c => (
-                  <option key={c.id} value={c.id}>{c.name} (Priority #{c.seniority_order || '?'})</option>
-                ))}
+                {sortedCarriers.map(c => <option key={c.id} value={c.id}>{c.name} (Priority #{c.seniority_order})</option>)}
               </select>
             </div>
-
-            <button 
-              type="submit"
-              style={{ width: '100%', background: '#003366', color: '#fff', border: 'none', padding: '12px', borderRadius: '4px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}
-            >
-              Enter Portal & View Calendar
-            </button>
+            <button type="submit" style={{ width: '100%', background: '#003366', color: '#fff', border: 'none', padding: '12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Enter Portal</button>
           </form>
         </div>
       ) : (
-        /* BIDDING CALENDAR VIEW */
         <div className="no-print">
-          <div style={{ background: '#d4edda', color: '#155724', padding: '12px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #c3e6cb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ background: '#d4edda', color: '#155724', padding: '12px', borderRadius: '6px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <h3 style={{ margin: 0, color: '#155724' }}>
-                🔓 {isStewardUnlocked ? '✏️ Steward Manual Bid Session for' : 'Authenticated as'} {currentCarrier.name} (Priority #{currentCarrier.seniority_order})
-              </h3>
-              <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>
-                Category {currentCarrier.category} — Selected Weeks: {selectedWeeks.join(', ') || 'None'}
-              </p>
+              <h3 style={{ margin: 0, color: '#155724' }}>Authenticated as: {currentCarrier.name} (Priority #{currentCarrier.seniority_order})</h3>
+              <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>Category {currentCarrier.category} — Selected: {selectedWeeks.join(', ') || 'None'}</p>
             </div>
-            <button 
-              onClick={() => { window.location.href = window.location.pathname; }}
-              style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
-            >
-              Exit Bidding
-            </button>
+            <button onClick={() => { window.location.href = window.location.pathname; }} style={{ background: '#6c757d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Exit</button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '8px', marginBottom: '20px' }}>
@@ -640,19 +477,15 @@ export default function App() {
                     borderRadius: '6px',
                     border: isSelected ? '2px solid #001f3f' : '1px solid #ccc',
                     background: isSelected ? '#003366' : isFull ? '#ffe6e6' : week.isPrimeTime ? '#fff8dc' : '#fff',
-                    color: isSelected ? '#ffffff' : isFull ? '#cc0000' : '#000000',
+                    color: isSelected ? '#fff' : isFull ? '#cc0000' : '#000',
                     textAlign: 'center',
                     cursor: (isFull && !isSelected) ? 'not-allowed' : 'pointer',
                   }}
                 >
                   <div style={{ fontWeight: 'bold', fontSize: '13px' }}>Week {week.weekNum}</div>
-                  <div style={{ fontSize: '11px', color: isSelected ? '#e0e0e0' : '#555', margin: '2px 0' }}>{week.dateString}</div>
-                  <div style={{ fontSize: '10px', fontWeight: 'bold', color: isSelected ? '#ffcc00' : (week.isPrimeTime ? '#b8860b' : '#666') }}>
-                    {week.isPrimeTime ? '☀️ Prime (June-Aug)' : 'Standard'}
-                  </div>
-                  <div style={{ fontSize: '11px', marginTop: '2px', color: isSelected ? '#ffffff' : '#333' }}>
-                    Slots: {booked}/{maxSlots}
-                  </div>
+                  <div style={{ fontSize: '11px', color: isSelected ? '#e0e0e0' : '#555' }}>{week.dateString}</div>
+                  <div style={{ fontSize: '10px', fontWeight: 'bold', color: isSelected ? '#ffcc00' : (week.isPrimeTime ? '#b8860b' : '#666') }}>{week.isPrimeTime ? '☀️ Prime' : 'Standard'}</div>
+                  <div style={{ fontSize: '11px', marginTop: '2px' }}>Slots: {booked}/{maxSlots}</div>
                 </button>
               );
             })}
@@ -665,7 +498,7 @@ export default function App() {
               width: '100%',
               padding: '14px',
               background: selectedWeeks.length === 0 ? '#cccccc' : '#28a745',
-              color: selectedWeeks.length === 0 ? '#666666' : '#fff',
+              color: '#fff',
               border: 'none',
               borderRadius: '6px',
               fontSize: '16px',
@@ -673,9 +506,7 @@ export default function App() {
               cursor: selectedWeeks.length === 0 ? 'not-allowed' : 'pointer',
             }}
           >
-            {selectedWeeks.length === 0 
-              ? 'Select at least 1 week on the calendar to submit' 
-              : `Submit ${currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0 ? 'Round 2' : 'Round 1'} Selections (${selectedWeeks.length} selected)`}
+            {selectedWeeks.length === 0 ? 'Select at least 1 week to submit' : `Submit Selections (${selectedWeeks.length} selected)`}
           </button>
         </div>
       )}
