@@ -107,7 +107,7 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // DIRECT AUTO-LOGIN VIA URL PARAMETER WITH FORCE OVERRIDE
+  // AUTO-LOGIN VIA PERSONALIZED URL PARAMETER (FORCE OVERRIDE FOR TESTING & REAL USE)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const targetId = params.get('carrierId');
@@ -115,30 +115,11 @@ export default function App() {
     if (targetId && carriers.length > 0) {
       const found = carriers.find(c => String(c.id) === String(targetId));
       if (found) {
-        // Enforce turn lock unless steward is unlocked
-        if (!isStewardUnlocked && activeBiddingCarrier && activeBiddingCarrier.id !== found.id) {
-          alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid in Round ${currentRound}. You cannot bid out of order.`);
-          return;
-        }
-
-        const hasFinishedCurrentRound = currentRound === 1 
-          ? (found.round1Choice && found.round1Choice.length > 0)
-          : (found.round2Choice && found.round2Choice.length > 0);
-
-        if (hasFinishedCurrentRound) {
-          alert(`You have already completed Round ${currentRound}. Please wait for the next round.`);
-          return;
-        }
-
-        // Force session override to auto-log in the target carrier immediately
         setCurrentCarrier(found);
         setSelectedWeeks([]);
-
-        // Clean up URL parameter so history stays clean
-        window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
-  }, [carriers, activeBiddingCarrier, currentRound, isStewardUnlocked]);
+  }, [carriers]);
 
   const getSlotsForWeek = (weekObj) => {
     if (customSlots[weekObj.weekNum] !== undefined) {
@@ -196,7 +177,7 @@ export default function App() {
       return;
     }
 
-    if (!isStewardUnlocked && activeBiddingCarrier && activeBiddingCarrier.id !== found.id) {
+    if (!isStewardUnlocked && activeBiddingCarrier && String(activeBiddingCarrier.id) !== String(found.id)) {
       alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid in Round ${currentRound}. You cannot bid out of order.`);
       return;
     }
@@ -405,10 +386,13 @@ export default function App() {
 
     alert(`Round ${activeRoundForCarrier} bid successfully submitted and locked for ${currentCarrier.name}!`);
     
-    // Explicitly reset carrier session and selected weeks
+    // Clear selections, clear carrier session, and clean URL
     setSelectedWeeks([]);
     setCurrentCarrier(null);
     setSelectedCarrierId('');
+    if (window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
   };
 
   const formatWeeksWithDates = (weekNums) => {
@@ -658,7 +642,7 @@ export default function App() {
         </div>
       )}
 
-      {/* FALLBACK MANUAL SELECTOR (ONLY SHOWN IF DIRECT LINK WAS NOT USED) */}
+      {/* FALLBACK MANUAL SELECTOR (ONLY SHOWN IF NO DIRECT LINK IS USED) */}
       {!currentCarrier ? (
         <div className="no-print" style={{ background: '#fff', padding: '24px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto' }}>
           <h2 style={{ color: '#003366', marginTop: 0 }}>Carrier Portal Login</h2>
