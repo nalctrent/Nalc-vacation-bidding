@@ -118,18 +118,26 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // BULLETPROOF HASH-QUERY ROUTING (#?id=)
+  // AGGRESSIVE RAW URL TOKEN GRABBER
   useEffect(() => {
     if (!isDataLoaded) return;
 
-    const hash = window.location.hash;
+    const fullUrl = window.location.href;
     let targetId = null;
 
-    if (hash.includes('id=')) {
-      targetId = new URLSearchParams(hash.replace('#?', '?')).get('id');
-    } else {
-      const params = new URLSearchParams(window.location.search);
-      targetId = params.get('carrierId') || params.get('id');
+    if (fullUrl.includes('id=')) {
+      const parts = fullUrl.split('id=');
+      targetId = parts[1] ? parts[1].split('&')[0].split('#')[0] : null;
+    }
+
+    if (!targetId) {
+      const hash = window.location.hash;
+      if (hash.includes('id=')) {
+        targetId = new URLSearchParams(hash.replace('#?', '?')).get('id');
+      } else {
+        const params = new URLSearchParams(window.location.search);
+        targetId = params.get('carrierId') || params.get('id');
+      }
     }
 
     if (targetId) {
@@ -223,7 +231,6 @@ export default function App() {
       }).eq('id', carrier.id);
     } catch (err) {}
 
-    // Generates a hash-query link (/#?id=...) that texting apps preserve and Vercel handles cleanly
     const cleanOrigin = window.location.origin.split('/#')[0].split('/?')[0];
     const portalLink = `${cleanOrigin}/#?id=${carrier.id}`;
 
