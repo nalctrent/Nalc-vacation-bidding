@@ -55,21 +55,14 @@ const DEFAULT_ROSTER = [
 
 export default function App() {
   const [carriers, setCarriers] = useState(() => {
-    try {
-      const saved = localStorage.getItem('nalc_carriers');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {}
-    return DEFAULT_ROSTER;
+    const saved = localStorage.getItem('nalc_carriers');
+    return saved ? JSON.parse(saved) : DEFAULT_ROSTER;
   });
 
   const [currentCarrier, setCurrentCarrier] = useState(null);
-  const [selectedCarrierId, setSelectedCarrierId] = useState('');
   const [selectedWeeks, setSelectedWeeks] = useState([]);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
-  const [turnError, setTurnError] = useState('');
+  const [portalMessage, setPortalMessage] = useState('');
 
   const [totalEmployees, setTotalEmployees] = useState(30);
   const [customSlots, setCustomSlots] = useState({});
@@ -81,10 +74,10 @@ export default function App() {
 
   const [stewardPinInput, setStewardPinInput] = useState('');
   const [isStewardUnlocked, setIsStewardUnlocked] = useState(false);
-
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isStewardView, setIsStewardView] = useState(false);
 
+  // FETCH FRESH DATA FROM SUPABASE ON MOUNT
   useEffect(() => {
     const syncData = async () => {
       try {
@@ -94,7 +87,7 @@ export default function App() {
           localStorage.setItem('nalc_carriers', JSON.stringify(data));
         }
       } catch (err) {
-        console.warn('Using local storage fallback');
+        console.warn('Network sync failed, using local fallback');
       } finally {
         setIsDataLoaded(true);
       }
@@ -110,14 +103,14 @@ export default function App() {
     ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
     : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
 
-  // DIRECT URL LINK LOGIN (TRUST THE SMS LINK TOKEN WITHOUT FALSE TURN LOCKS)
+  // RESOLVE URL PARAMETER SECURELY AFTER DATA LOADS
   useEffect(() => {
     if (!isDataLoaded) return;
 
     const params = new URLSearchParams(window.location.search);
     const targetId = params.get('carrierId');
 
-    if (targetId && carriers.length > 0) {
+    if (targetId) {
       const found = carriers.find(c => String(c.id) === String(targetId));
       if (found) {
         const hasFinishedRound = currentRound === 1 
@@ -125,14 +118,16 @@ export default function App() {
           : (found.round2Choice && found.round2Choice.length > 0);
 
         if (hasFinishedRound && !isStewardUnlocked) {
-          setTurnError(`${found.name}, you have already submitted your selections for Round ${currentRound}.`);
+          setPortalMessage(`${found.name}, you have already completed your selections for Round ${currentRound}. Thank you!`);
           setCurrentCarrier(null);
           return;
         }
 
-        setTurnError('');
+        setPortalMessage('');
         setCurrentCarrier(found);
         setSelectedWeeks([]);
+      } else {
+        setPortalMessage('Invalid carrier link token.');
       }
     }
   }, [isDataLoaded, carriers, currentRound, isStewardUnlocked]);
@@ -143,9 +138,7 @@ export default function App() {
   };
 
   const getSlotsForWeek = (weekObj) => {
-    if (customSlots[weekObj.weekNum] !== undefined) {
-      return customSlots[weekObj.weekNum];
-    }
+    if (customSlots[weekObj.weekNum] !== undefined) return customSlots[weekObj.weekNum];
     const rate = weekObj.isPrimeTime ? 0.14 : 0.11;
     return Math.max(1, Math.round(totalEmployees * rate));
   };
@@ -175,32 +168,14 @@ export default function App() {
   };
 
   const handleUnlockSteward = () => {
-    if (stewardPinInput === '366366' || stewardPinInput === '1234' || stewardPinInput === '5678') {
+    if (['366366', '1234', '5678'].includes(stewardPinInput)) {
       setIsStewardUnlocked(true);
       setIsStewardView(true);
       setStewardPinInput('');
-      setTurnError('');
+      setPortalMessage('');
     } else {
       alert('Invalid Officer PIN.');
     }
-  };
-
-  const handleCarrierLogin = (e) => {
-    e.preventDefault();
-    if (!selectedCarrierId) {
-      alert('Please select a name.');
-      return;
-    }
-    const found = carriers.find(c => String(c.id) === String(selectedCarrierId));
-    if (!found) return;
-
-    // Strict turn lock ONLY applies to manual dropdown logins
-    if (!isStewardUnlocked && activeBiddingCarrier && String(activeBiddingCarrier.id) !== String(found.id)) {
-      alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid.`);
-      return;
-    }
-
-    window.location.search = `?carrierId=${selectedCarrierId}`;
   };
 
   const handleManualBidStart = (carrier) => {
@@ -235,19 +210,15 @@ export default function App() {
   };
 
   const handleBypassCarrier = async (carrierToBypass) => {
-    if (!confirm(`Are you sure you want to bypass ${carrierToBypass.name}?`)) return;
-
-    const updatedCarriers = carriers.map(c => c.id === carrierToBypass.id ? { ...c, status: 'bypassed' } : c);
-    saveCarriersState(updatedCarriers);
-    try {
-      await supabase.from('carriers').update({ status: 'bypassed' }).eq('id', carrierToBypass.id);
-    } catch (err) {}
+    if (!confirm(`Bypass ${carrierToBypass.name}?`)) return;
+    const updated = carriers.map(c => c.id === carrierToBypass.id ? { ...c, status: 'bypassed' } : c);
+    saveCarriersState(updated);
+    try { await supabase.from('carriers').update({ status: 'bypassed' }).eq('id', carrierToBypass.id); } catch (err) {}
   };
 
   const handleAddCarrier = async (e) => {
     e.preventDefault();
     if (!newCarrierName.trim()) return;
-
     const newCarrier = {
       id: Date.now().toString(),
       name: newCarrierName.trim(),
@@ -262,15 +233,10 @@ export default function App() {
       deadline_at: null,
       status: 'pending'
     };
-
     const updated = [...carriers, newCarrier];
     saveCarriersState(updated);
     try { await supabase.from('carriers').insert([newCarrier]); } catch (err) {}
-
-    setNewCarrierName('');
-    setNewCarrierPhone('');
-    setNewCarrierContact('');
-    setNewCarrierRank('');
+    setNewCarrierName(''); setNewCarrierPhone(''); setNewCarrierContact(''); setNewCarrierRank('');
   };
 
   const handleUpdateRank = async (id, newRank) => {
@@ -280,7 +246,7 @@ export default function App() {
   };
 
   const handleRemoveCarrier = async (id) => {
-    if (confirm('Remove this carrier?')) {
+    if (confirm('Remove carrier?')) {
       const updated = carriers.filter(c => c.id !== id);
       saveCarriersState(updated);
       try { await supabase.from('carriers').delete().eq('id', id); } catch (err) {}
@@ -295,50 +261,49 @@ export default function App() {
 
   const handleWeekClick = (weekNum) => {
     if (!currentCarrier) return;
-
     if (selectedWeeks.includes(weekNum)) {
-      setSelectedWeeks(selectedWeeks.filter((w) => w !== weekNum));
+      setSelectedWeeks(selectedWeeks.filter(w => w !== weekNum));
       return;
     }
+    const hasCompletedR1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
+    const maxAllowed = hasCompletedR1 ? 1 : (currentCarrier.category === 1 ? 2 : 3);
 
-    const carrierHasCompletedRound1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
-    const maxWeeksAllowed = carrierHasCompletedRound1 ? 1 : (currentCarrier.category === 1 ? 2 : 3);
-
-    if (selectedWeeks.length >= maxWeeksAllowed) {
-      alert(carrierHasCompletedRound1 ? 'Round 2 is strictly limited to 1 week selection.' : `Category ${currentCarrier.category} is limited to ${maxWeeksAllowed} weeks in Round 1.`);
+    if (selectedWeeks.length >= maxAllowed) {
+      alert(hasCompletedR1 ? 'Round 2 is limited to 1 week.' : `Category ${currentCarrier.category} is limited to ${maxAllowed} weeks.`);
       return;
     }
 
     const weekObj = CALENDAR_WEEKS.find(w => w.weekNum === weekNum);
     if (getBookedCount(weekNum) >= getSlotsForWeek(weekObj)) {
-      alert('This week has reached its maximum allowable quota slots.');
+      alert('This week is full.');
       return;
     }
-
     setSelectedWeeks([...selectedWeeks, weekNum].sort((a, b) => a - b));
   };
 
   const handleSubmitBid = async () => {
     if (selectedWeeks.length === 0 || !currentCarrier) return;
 
-    const carrierHasCompletedRound1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
-    const activeRoundForCarrier = carrierHasCompletedRound1 ? 2 : 1;
+    const hasCompletedR1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
+    const activeRound = hasCompletedR1 ? 2 : 1;
 
-    const updatedCarriers = carriers.map(c => {
+    const updated = carriers.map(c => {
       if (c.id === currentCarrier.id) {
-        return activeRoundForCarrier === 1 ? { ...c, round1Choice: selectedWeeks } : { ...c, round2Choice: selectedWeeks };
+        return activeRound === 1 ? { ...c, round1Choice: selectedWeeks } : { ...c, round2Choice: selectedWeeks };
       }
       return c;
     });
 
-    saveCarriersState(updatedCarriers);
+    saveCarriersState(updated);
     try {
       await supabase.from('carriers').update(
-        activeRoundForCarrier === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks }
+        activeRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks }
       ).eq('id', currentCarrier.id);
     } catch (err) {}
 
-    alert(`Bid submitted and locked for ${currentCarrier.name}!`);
+    alert(`Round ${activeRound} selections successfully submitted for ${currentCarrier.name}!`);
+    
+    // HARD PURGE URL & SESSION STATE
     window.location.href = window.location.pathname;
   };
 
@@ -363,7 +328,7 @@ export default function App() {
   };
 
   if (!isDataLoaded) {
-    return <div style={{ textAlign: 'center', padding: '50px', fontFamily: 'Arial' }}><h2>Syncing NALC Branch 366 Roster...</h2></div>;
+    return <div style={{ textAlign: 'center', padding: '50px', fontFamily: 'Arial' }}><h2>Loading NALC Branch 366 Portal...</h2></div>;
   }
 
   return (
@@ -428,29 +393,28 @@ export default function App() {
         </div>
       ) : null}
 
-      {turnError && (
-        <div style={{ background: '#f8d7da', color: '#721c24', padding: '16px', borderRadius: '8px', border: '1px solid #f5c6cb', marginBottom: '20px', textAlign: 'center' }}>
-          <h3 style={{ margin: '0 0 6px 0' }}>⚠️ Notice</h3>
-          <p style={{ margin: 0 }}>{turnError}</p>
+      {portalMessage && (
+        <div style={{ background: '#e2f0fb', color: '#003366', padding: '20px', borderRadius: '8px', border: '1px solid #b0c4de', marginBottom: '20px', textAlign: 'center' }}>
+          <h3 style={{ margin: '0 0 6px 0' }}>NALC Branch 366 Portal</h3>
+          <p style={{ margin: 0, fontSize: '15px' }}>{portalMessage}</p>
         </div>
       )}
 
-      {!currentCarrier ? (
-        <div className="no-print" style={{ background: '#fff', padding: '24px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto' }}>
-          <h2 style={{ color: '#003366', marginTop: 0 }}>Carrier Portal Login</h2>
-          <p style={{ fontSize: '14px', color: '#555' }}>Current Turn: <strong style={{ color: '#d9534f' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'All Completed'}</strong></p>
-          
-          <form onSubmit={handleCarrierLogin}>
-            <div style={{ marginBottom: '14px' }}>
-              <select value={selectedCarrierId} onChange={(e) => setSelectedCarrierId(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                <option value="">-- Choose Carrier --</option>
-                {sortedCarriers.map(c => <option key={c.id} value={c.id}>{c.name} (Priority #{c.seniority_order})</option>)}
-              </select>
-            </div>
-            <button type="submit" style={{ width: '100%', background: '#003366', color: '#fff', border: 'none', padding: '12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Enter Portal</button>
-          </form>
+      {/* SECURE LANDING (NO CARRIER DROPDOWN BOXES ALLOWED) */}
+      {!currentCarrier && !isStewardUnlocked && !portalMessage ? (
+        <div className="no-print" style={{ background: '#fff', padding: '30px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto', textAlign: 'center' }}>
+          <h2 style={{ color: '#003366', marginTop: 0 }}>Secure Bidding Portal</h2>
+          <p style={{ fontSize: '14px', color: '#555', lineHeight: '1.5' }}>
+            Please use your personalized SMS text message link sent by your shop steward to access your vacation bidding calendar.
+          </p>
+          <div style={{ marginTop: '20px', padding: '12px', background: '#f8f9fa', borderRadius: '6px', fontSize: '13px', color: '#666' }}>
+            Current Bidding Turn: <strong style={{ color: '#d9534f' }}>{activeBiddingCarrier ? `${activeBiddingCarrier.name} (Priority #${activeBiddingCarrier.seniority_order})` : 'All Completed'}</strong>
+          </div>
         </div>
-      ) : (
+      ) : null}
+
+      {/* BIDDING CALENDAR VIEW */}
+      {currentCarrier ? (
         <div className="no-print">
           <div style={{ background: '#d4edda', color: '#155724', padding: '12px', borderRadius: '6px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
@@ -509,7 +473,7 @@ export default function App() {
             {selectedWeeks.length === 0 ? 'Select at least 1 week to submit' : `Submit Selections (${selectedWeeks.length} selected)`}
           </button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
