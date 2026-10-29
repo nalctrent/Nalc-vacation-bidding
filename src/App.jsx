@@ -50,9 +50,9 @@ const generateYearWeeks = () => {
 const CALENDAR_WEEKS = generateYearWeeks();
 
 const DEFAULT_ROSTER = [
-  { id: '1', name: 'Trenton Bauer', category: 3, pin: '1234', phone: '4173964312', contact: 'nalctrent@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 1, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'active' },
-  { id: '2', name: 'Jessica', category: 2, pin: '5678', phone: '4173565260', contact: 'Jessica.branch366@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 2, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' },
-  { id: '3', name: 'John Doe', category: 1, pin: '0000', phone: '', contact: '', round1Choice: [], round2Choice: [], seniority_order: 3, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' }
+  { id: '1', name: 'Trenton Bauer', category: 3, phone: '4173964312', contact: 'nalctrent@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 1, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'active' },
+  { id: '2', name: 'Jessica', category: 2, phone: '4173565260', contact: 'Jessica.branch366@gmail.com', round1Choice: [], round2Choice: [], seniority_order: 2, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' },
+  { id: '3', name: 'John Doe', category: 1, phone: '', contact: '', round1Choice: [], round2Choice: [], seniority_order: 3, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' }
 ];
 
 export default function App() {
@@ -63,14 +63,12 @@ export default function App() {
   const [currentCarrier, setCurrentCarrier] = useState(null);
   
   const [selectedCarrierId, setSelectedCarrierId] = useState('');
-  const [pinInput, setPinInput] = useState('');
   const [selectedWeeks, setSelectedWeeks] = useState([]);
   
   const [totalEmployees, setTotalEmployees] = useState(30);
   const [customSlots, setCustomSlots] = useState({});
   const [newCarrierName, setNewCarrierName] = useState('');
   const [newCarrierCategory, setNewCarrierCategory] = useState(1);
-  const [newCarrierPin, setNewCarrierPin] = useState('0000');
   const [newCarrierPhone, setNewCarrierPhone] = useState('');
   const [newCarrierContact, setNewCarrierContact] = useState('');
   const [newCarrierRank, setNewCarrierRank] = useState('');
@@ -211,7 +209,7 @@ export default function App() {
     setSelectedWeeks([]);
   };
 
-  // Steward Action: Send link, start 48-hour clock, and pass carrierId token
+  // Steward Action: Send personalized link & start 48-hour clock
   const handleSendLinkAndStartTimer = async (carrier) => {
     const now = new Date();
     const deadline = calculateBiddingDeadline(now);
@@ -232,7 +230,7 @@ export default function App() {
       }).eq('id', carrier.id);
     } catch (err) {}
 
-    // Generates personalized URL bypassing login screen
+    // Generates personalized direct auto-login link
     const portalLink = `${window.location.origin}${window.location.pathname}?carrierId=${carrier.id}`;
     const deadlineFormatted = deadline.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! You have until ${deadlineFormatted} to submit your picks: ${portalLink}`);
@@ -240,7 +238,7 @@ export default function App() {
     window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
   };
 
-  // Steward Action: Bypass overdue carrier and activate next in line
+  // Steward Action: Bypass overdue carrier
   const handleBypassCarrier = async (carrierToBypass) => {
     if (!confirm(`Are you sure you want to bypass ${carrierToBypass.name} for failing to respond within 48 hours?`)) return;
 
@@ -268,7 +266,6 @@ export default function App() {
       id: Date.now().toString(),
       name: newCarrierName.trim(),
       category: Number(newCarrierCategory),
-      pin: '0000',
       phone: newCarrierPhone.trim(),
       contact: newCarrierContact.trim(),
       round1Choice: [],
@@ -388,7 +385,6 @@ export default function App() {
     alert('Bid successfully submitted and locked!');
     setSelectedWeeks([]);
     setCurrentCarrier(null);
-    setPinInput('');
     setSelectedCarrierId('');
   };
 
@@ -633,7 +629,7 @@ export default function App() {
         </div>
       )}
 
-      {/* CARRIER LOGIN SCREEN (FALLBACK IF DIRECT LINK IS NOT USED) */}
+      {/* CARRIER FALLBACK SCREEN (WHEN OPENING MAIN PORTAL URL DIRECTLY) */}
       {!currentCarrier ? (
         <div className="no-print" style={{ background: '#fff', padding: '24px', borderRadius: '8px', border: '1px solid #ccc', maxWidth: '500px', margin: '40px auto' }}>
           <h2 style={{ color: '#003366', marginTop: 0 }}>Carrier Portal Login</h2>
@@ -660,7 +656,7 @@ export default function App() {
               type="submit"
               style={{ width: '100%', background: '#003366', color: '#fff', border: 'none', padding: '12px', borderRadius: '4px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}
             >
-              View Calendar
+              Enter Portal & View Calendar
             </button>
           </form>
         </div>
