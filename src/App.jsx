@@ -338,15 +338,23 @@ export default function App() {
     const fieldToUpdate = activeRound === 1 ? { round1Choice: selectedWeeks } : { round2Choice: selectedWeeks };
 
     try {
+      // UPDATED: Primary match on ID with fallback to name
       const { error } = await supabase
         .from('carriers')
         .update(fieldToUpdate)
-        .eq('name', currentCarrier.name);
+        .eq('id', String(currentCarrier.id));
 
       if (error) {
-        console.error('Supabase error:', error.message);
-        alert(`Database error: ${error.message}`);
-        return;
+        console.warn('ID update failed, trying name fallback:', error.message);
+        const { error: nameError } = await supabase
+          .from('carriers')
+          .update(fieldToUpdate)
+          .eq('name', currentCarrier.name);
+
+        if (nameError) {
+          alert(`Database error: ${nameError.message}`);
+          return;
+        }
       }
     } catch (err) {
       console.error('Network catch:', err);
