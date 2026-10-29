@@ -24,7 +24,7 @@ const generateYearWeeks = () => {
     const month = start.getMonth();
     const isPrimeTime = month === 5 || month === 6 || month === 7;
 
-    weeks.push({ weekNum: i + 1, dateString, isPrimeTime });
+    weeks.push({ weekNum: i + 1, dateString, isPrimeTime, startDate: start, endDate: end });
   }
   return weeks;
 };
@@ -83,7 +83,6 @@ export default function App() {
       if (data && data.length > 0) {
         setCarriers(data);
       } else {
-        // Seed default roster into Supabase if table is empty
         for (const c of DEFAULT_ROSTER) {
           await supabase.from('carriers').upsert([c]);
         }
@@ -97,7 +96,6 @@ export default function App() {
   const allRound1Complete = sortedCarriers.length > 0 && sortedCarriers.every(c => c.round1Choice && c.round1Choice.length > 0);
   const currentRound = allRound1Complete ? 2 : 1;
 
-  // Strict Seniority Turn Queue: Find the first carrier who hasn't completed the active round
   const activeBiddingCarrier = currentRound === 1
     ? sortedCarriers.find(c => !c.round1Choice || c.round1Choice.length === 0)
     : sortedCarriers.find(c => !c.round2Choice || c.round2Choice.length === 0);
@@ -158,7 +156,6 @@ export default function App() {
       return;
     }
 
-    // Strict Out-of-Order Turn Enforcement
     if (activeBiddingCarrier && activeBiddingCarrier.id !== found.id) {
       alert(`Turn Lock Active: It is currently rank #${activeBiddingCarrier.seniority_order} (${activeBiddingCarrier.name})'s turn to bid in Round ${currentRound}. You cannot bid out of order.`);
       return;
@@ -180,7 +177,6 @@ export default function App() {
 
     setCurrentCarrier(found);
     setSelectedWeeks([]);
-    setIsPinAuthenticated(true);
   };
 
   const handleAddCarrier = async (e) => {
@@ -199,15 +195,12 @@ export default function App() {
       contact: newCarrierContact.trim(),
       round1Choice: [],
       round2Choice: [],
-      round1_submitted_at: null,
-      round2_submitted_at: null,
       ps3971_submitted: false,
       seniority_order: newCarrierRank ? Number(newCarrierRank) : carriers.length + 1
     };
 
     const updated = [...carriers, newCarrier];
     setCarriers(updated);
-    
     try {
       await supabase.from('carriers').insert([newCarrier]);
     } catch (err) {
@@ -286,17 +279,14 @@ export default function App() {
       }
     }
 
-    const nowISO = new Date().toISOString();
     const updatedCarriers = [...carriers];
     const targetIndex = updatedCarriers.findIndex(c => c.id === currentCarrier.id);
     const target = updatedCarriers[targetIndex];
 
     if (currentRound === 1) {
       target.round1Choice = selectedWeeks;
-      target.round1_submitted_at = nowISO;
     } else {
       target.round2Choice = selectedWeeks;
-      target.round2_submitted_at = nowISO;
     }
 
     await triggerOfficerAlert(target.name, currentRound, selectedWeeks);
@@ -305,8 +295,6 @@ export default function App() {
     await supabase.from('carriers').update({
       round1Choice: target.round1Choice,
       round2Choice: target.round2Choice,
-      round1_submitted_at: target.round1_submitted_at,
-      round2_submitted_at: target.round2_submitted_at
     }).eq('id', target.id);
 
     alert('Bid successfully submitted and locked!');
@@ -314,13 +302,20 @@ export default function App() {
     setCurrentCarrier(null);
     setPinInput('');
     setSelectedCarrierId('');
-    setIsPinAuthenticated(false);
   };
 
   const textCarrierDirectly = (carrier) => {
     const link = window.location.origin + window.location.pathname;
     const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! Submit your vacation picks here: ${link}`);
     window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
+  };
+
+  const formatWeeksWithDates = (weekNums) => {
+    if (!weekNums || weekNums.length === 0) return 'Pending';
+    return weekNums.map(num => {
+      const w = CALENDAR_WEEKS.find(wk => wk.weekNum === Number(num));
+      return w ? `Wk ${num} (${w.dateString})` : `Wk ${num}`;
+    }).join(', ');
   };
 
   const handlePrintMasterList = () => {
@@ -346,8 +341,8 @@ export default function App() {
                 <th class="center">Seniority Priority</th>
                 <th>Carrier Name</th>
                 <th class="center">Cat</th>
-                <th>Round 1 Weeks & Date</th>
-                <th>Round 2 Weeks & Date</th>
+                <th>Round 1 Selected Dates</th>
+                <th>Round 2 Selected Dates</th>
                 <th class="center">PS 3971 Submitted</th>
               </tr>
             </thead>
@@ -355,18 +350,16 @@ export default function App() {
     `;
 
     sortedCarriers.forEach((c) => {
-      const r1 = c.round1Choice && c.round1Choice.length > 0 ? c.round1Choice.join(', ') : 'Pending';
-      const r1Date = c.round1_submitted_at ? new Date(c.round1_submitted_at).toLocaleDateString() : '';
-      const r2 = c.round2Choice && c.round2Choice.length > 0 ? c.round2Choice.join(', ') : 'Pending';
-      const r2Date = c.round2_submitted_at ? new Date(c.round2_submitted_at).toLocaleDateString() : '';
+      const r1Formatted = formatWeeksWithDates(c.round1Choice);
+      const r2Formatted = formatWeeksWithDates(c.round2Choice);
 
       html += `
         <tr>
           <td class="center"><b>Priority #${c.seniority_order || '—'}</b></td>
           <td><b>${c.name}</b></td>
           <td class="center">Cat ${c.category}</td>
-          <td>${r1 !== 'Pending' ? `Wks: ${r1} (${r1Date})` : 'Pending'}</td>
-          <td>${r2 !== 'Pending' ? `Wks: ${r2} (${r2Date})` : 'Pending'}</td>
+          <td>${r1Formatted}</td>
+          <td>${r2Formatted}</td>
           <td class="center">${c.ps3971_submitted ? '☑ Yes' : '☐ No'}</td>
         </tr>
       `;
@@ -423,7 +416,7 @@ export default function App() {
               onClick={() => setIsAdminOpen(!isAdminOpen)} 
               style={{ background: '#555', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer' }}
             >
-              {isAdminOpen ? 'Close Roster Admin' : '⚙️ Roster & Priority Settings'}
+              {isAdminOpen ? 'Close Roster Admin' : '⚙️ Roster & Quota Settings'}
             </button>
           </div>
         )}
@@ -447,8 +440,8 @@ export default function App() {
                 <th style={{ padding: '10px' }}>Priority #</th>
                 <th style={{ padding: '10px' }}>Carrier Name</th>
                 <th style={{ padding: '10px' }}>Category</th>
-                <th style={{ padding: '10px' }}>Round 1 Choice & Date</th>
-                <th style={{ padding: '10px' }}>Round 2 Choice & Date</th>
+                <th style={{ padding: '10px' }}>Round 1 Selections</th>
+                <th style={{ padding: '10px' }}>Round 2 Selections</th>
                 <th style={{ padding: '10px', textAlign: 'center' }}>PS 3971 Submitted</th>
                 <th style={{ padding: '10px' }}>Dispatch</th>
               </tr>
@@ -456,10 +449,8 @@ export default function App() {
             <tbody>
               {sortedCarriers.map((c) => {
                 const isCurrentTurn = activeBiddingCarrier && activeBiddingCarrier.id === c.id;
-                const r1 = c.round1Choice && c.round1Choice.length > 0 ? c.round1Choice.join(', ') : 'Pending';
-                const r1Date = c.round1_submitted_at ? new Date(c.round1_submitted_at).toLocaleDateString() : '';
-                const r2 = c.round2Choice && c.round2Choice.length > 0 ? c.round2Choice.join(', ') : 'Pending';
-                const r2Date = c.round2_submitted_at ? new Date(c.round2_submitted_at).toLocaleDateString() : '';
+                const r1Formatted = formatWeeksWithDates(c.round1Choice);
+                const r2Formatted = formatWeeksWithDates(c.round2Choice);
 
                 return (
                   <tr key={c.id} style={{ borderBottom: '1px solid #ddd', fontSize: '13px', background: isCurrentTurn ? '#fff9e6' : '#fff' }}>
@@ -468,8 +459,8 @@ export default function App() {
                       {c.name} {isCurrentTurn && <span style={{ color: '#d9534f', fontSize: '11px' }}>(Up Now)</span>}
                     </td>
                     <td style={{ padding: '10px' }}>Cat {c.category}</td>
-                    <td style={{ padding: '10px' }}>{r1 !== 'Pending' ? `Wks: ${r1} (${r1Date})` : <span style={{ color: '#888' }}>Pending</span>}</td>
-                    <td style={{ padding: '10px' }}>{r2 !== 'Pending' ? `Wks: ${r2} (${r2Date})` : <span style={{ color: '#888' }}>Pending</span>}</td>
+                    <td style={{ padding: '10px' }}>{r1Formatted}</td>
+                    <td style={{ padding: '10px' }}>{r2Formatted}</td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>
                       <input 
                         type="checkbox" 
@@ -496,7 +487,7 @@ export default function App() {
 
       {isStewardUnlocked && isAdminOpen && (
         <div className="no-print" style={{ background: '#f4f4f4', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ccc' }}>
-          <h3>Staffing & Bid Priority Settings</h3>
+          <h3>Staffing & Leave Quota Settings</h3>
           
           <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <label style={{ fontSize: '14px', fontWeight: 'bold' }}>Total Office Carriers (for 11%/14% calculations):</label>
@@ -508,6 +499,23 @@ export default function App() {
             />
           </div>
 
+          <div style={{ marginBottom: '20px', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #ddd' }}>
+            <h4 style={{ margin: '0 0 8px 0', color: '#003366' }}>Manual Slot Quota Adjustments Per Week</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+              {CALENDAR_WEEKS.map(w => (
+                <div key={w.weekNum} style={{ background: '#f9f9f9', padding: '6px', border: '1px solid #ddd', borderRadius: '4px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 'bold' }}>Wk {w.weekNum} ({w.dateString.slice(0,6)})</div>
+                  <input 
+                    type="number" 
+                    value={customSlots[w.weekNum] !== undefined ? customSlots[w.weekNum] : getSlotsForWeek(w)}
+                    onChange={(e) => setCustomSlots({ ...customSlots, [w.weekNum]: Number(e.target.value) })}
+                    style={{ width: '50px', textAlign: 'center', marginTop: '4px' }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
           <form onSubmit={handleAddCarrier} style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
             <input type="text" placeholder="Carrier Name" value={newCarrierName} onChange={(e) => setNewCarrierName(e.target.value)} style={{ padding: '6px', flex: 1 }} />
             <select value={newCarrierCategory} onChange={(e) => setNewCarrierCategory(Number(e.target.value))} style={{ padding: '6px' }}>
@@ -517,7 +525,7 @@ export default function App() {
             </select>
             <input type="text" placeholder="PIN" maxLength={4} value={newCarrierPin} onChange={(e) => setNewCarrierPin(e.target.value)} style={{ padding: '6px', width: '60px' }} />
             <input type="tel" placeholder="Phone" value={newCarrierPhone} onChange={(e) => setNewCarrierPhone(e.target.value)} style={{ padding: '6px', width: '100px' }} />
-            <input type="number" placeholder="Priority Rank #" value={newCarrierRank} onChange={(e) => setNewCarrierRank(e.target.value)} style={{ padding: '6px', width: '80px' }} />
+            <input type="number" placeholder="Priority #" value={newCarrierRank} onChange={(e) => setNewCarrierRank(e.target.value)} style={{ padding: '6px', width: '80px' }} />
             <button type="submit" style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }}>Add Carrier</button>
           </form>
 
