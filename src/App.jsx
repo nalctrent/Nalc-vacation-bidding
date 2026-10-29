@@ -19,17 +19,27 @@ export default function App() {
   // Steward & Officer Master Board State
   const [isStewardMode, setIsStewardMode] = useState(false);
   const [stewardPin, setStewardPin] = useState('');
+  
+  // Manual Overrides & Queue State
   const [manualCarrierId, setManualCarrierId] = useState('');
   const [manualRound, setManualRound] = useState('round1');
   const [manualWeeksInput, setManualWeeksInput] = useState('');
-
-  // Seniority Turn Queue State
   const [targetCarrierId, setTargetCarrierId] = useState('');
   const [newSeniorityRank, setNewSeniorityRank] = useState('');
+
+  // Add Carrier Form State
+  const [newCarrierName, setNewCarrierName] = useState('');
+  const [newCarrierEmail, setNewCarrierEmail] = useState('');
+  const [newCarrierPin, setNewCarrierPin] = useState('');
+  const [newCarrierRank, setNewCarrierRank] = useState('');
+
+  // Block-Out Week State (NALC Events, Conventions, etc.)
+  const [blockWeekInput, setBlockWeekInput] = useState('');
 
   useEffect(() => {
     fetchCarriers();
     fetchTakenWeeks();
+    fetchBlockedWeeks();
   }, []);
 
   const fetchCarriers = async () => {
@@ -57,6 +67,14 @@ export default function App() {
       }
     });
     setTakenWeeks(blocked);
+  };
+
+  const fetchBlockedWeeks = async () => {
+    // Fetches branch-wide event blockouts if stored in Supabase (or defaults empty)
+    const { data } = await supabase.from('branch_settings').select('*').eq('id', 1).single();
+    if (data && data.blocked_weeks) {
+      setBlockedEventWeeks(new Set(data.blocked_weeks.map(String)));
+    }
   };
 
   const sortedCarriers = [...carriers].sort((a, b) => (a.seniority_order || 999) - (b.seniority_order || 999));
@@ -112,13 +130,12 @@ export default function App() {
 
     const columnToUpdate = currentRound === 'round1' ? 'round1Choice' : 'round2Choice';
     const timestampKey = currentRound === 'round1' ? 'round1_submitted_at' : 'round2_submitted_at';
-    const nowISO = new Date().toISOString();
 
     const { error } = await supabase
       .from('carriers')
       .update({ 
         [columnToUpdate]: selectedWeeks,
-        [timestampKey]: nowISO
+        [timestampKey]: new Date().toISOString()
       })
       .eq('id', currentCarrier.id);
 
@@ -145,6 +162,49 @@ export default function App() {
     } else {
       alert('Database error saving bid: ' + error.message);
     }
+  };
+
+  // Steward Action: Add New Carrier to Roster
+  const handleAddCarrier = async (e) => {
+    e.preventDefault();
+    if (!newCarrierName || !newCarrierPin) {
+      alert('Please enter carrier name and PIN.');
+      return;
+    }
+
+    const { error } = await supabase.from('carriers').insert([{
+      name: newCarrierName,
+      email: newCarrierEmail,
+      pin: newCarrierPin,
+      seniority_order: newCarrierRank ? parseInt(newCarrierRank) : sortedCarriers.length + 1,
+      ps3971_submitted: false
+    }]);
+
+    if (!error) {
+      alert('Carrier successfully added to roster!');
+      setNewCarrierName('');
+      setNewCarrierEmail('');
+      setNewCarrierPin('');
+      setNewCarrierRank('');
+      fetchCarriers();
+    } else {
+      alert('Error adding carrier: ' + error.message);
+    }
+  };
+
+  // Steward Action: Block Out Event Weeks (NALC Conventions, etc.)
+  const handleBlockWeeks = async () => {
+    if (!blockWeekInput) return;
+    const newBlocked = blockWeekInput.split(',').map(w => w.trim()).filter(Boolean);
+    const updatedBlockedSet = new Set([...blockedEventWeeks, ...newBlocked]);
+    const blockedArray = Array.from(updatedBlockedSet);
+
+    setBlockedEventWeeks(updatedBlockedSet);
+    setBlockWeekInput('');
+
+    // Save to branch settings table
+    await supabase.from('branch_settings').upsert({ id: 1, blocked_weeks: blockedArray });
+    alert('Weeks successfully blocked out for branch events!');
   };
 
   const handleManualOverride = async () => {
@@ -196,7 +256,6 @@ export default function App() {
     }
   };
 
-  // Toggle PS 3971 checkbox status in database
   const togglePS3971Status = async (carrierId, currentStatus) => {
     const { error } = await supabase
       .from('carriers')
@@ -207,8 +266,6 @@ export default function App() {
       fetchCarriers();
     }
   };
-
-  // --- VIEWS ---
 
   if (!currentCarrier) {
     return (
@@ -280,7 +337,18 @@ export default function App() {
   if (currentCarrier.isSteward) {
     return (
       <div style={{ padding: '24px', fontFamily: 'system-ui, sans-serif', maxWidth: '950px', margin: '20px auto', background: '#fff', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #003366', paddingBottom: '10px' }}>
+        
+        {/* CSS Print Rules: Hides everything except the printable roster section when printing */}
+        <style dangerouslySetInnerHTML={{__html: `
+          @media print {
+            body * { visibility: hidden; }
+            #printable-roster, #printable-roster * { visibility: visible; }
+            #printable-roster { position: absolute; left: 0; top: 0; width: 100%; }
+            .no-print { display: none !important; }
+          }
+        `}} />
+
+        <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #003366', paddingBottom: '10px' }}>
           <div>
             <h2 style={{ color: '#003366', margin: 0 }}>Steward & Officer Master Board</h2>
             <p style={{ color: '#666', margin: '4px 0 0 0' }}>Phase: <strong>{allRound1Complete ? 'Round 2' : 'Round 1'}</strong></p>
@@ -293,8 +361,66 @@ export default function App() {
           </button>
         </div>
 
-        {/* Seniority Queue Turn Manager */}
-        <div style={{ background: '#f8f9fa', padding: '16px', borderRadius: '6px', margin: '20px 0', border: '1px solid #dee2e6' }}>
+        {/* 1. Add Carrier to Roster */}
+        <div className="no-print" style={{ background: '#f8f9fa', padding: '16px', borderRadius: '6px', margin: '20px 0', border: '1px solid #dee2e6' }}>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#003366' }}>Add New Carrier to Roster</h3>
+          <form onSubmit={handleAddCarrier} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr auto', gap: '10px' }}>
+            <input 
+              type="text" 
+              placeholder="Carrier Full Name" 
+              value={newCarrierName}
+              onChange={(e) => setNewCarrierName(e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ced4da' }}
+            />
+            <input 
+              type="email" 
+              placeholder="Email (for Resend alerts)" 
+              value={newCarrierEmail}
+              onChange={(e) => setNewCarrierEmail(e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ced4da' }}
+            />
+            <input 
+              type="text" 
+              placeholder="4-Digit PIN" 
+              value={newCarrierPin}
+              onChange={(e) => setNewCarrierPin(e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ced4da' }}
+            />
+            <input 
+              type="number" 
+              placeholder="Rank #" 
+              value={newCarrierRank}
+              onChange={(e) => setNewCarrierRank(e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ced4da' }}
+            />
+            <button type="submit" style={{ padding: '8px 16px', background: '#003366', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+              Add Carrier
+            </button>
+          </form>
+        </div>
+
+        {/* 2. Block-Out Weeks Manager */}
+        <div className="no-print" style={{ background: '#f8f9fa', padding: '16px', borderRadius: '6px', margin: '20px 0', border: '1px solid #dee2e6' }}>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#003366' }}>Block Out Weeks (NALC Events / Branch Conventions)</h3>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <input 
+              type="text" 
+              placeholder="Weeks to block (e.g. 25, 26, 40)" 
+              value={blockWeekInput}
+              onChange={(e) => setBlockWeekInput(e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ced4da', flex: 1 }}
+            />
+            <button onClick={handleBlockWeeks} style={{ padding: '8px 16px', background: '#dc3545', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+              Block Weeks
+            </button>
+          </div>
+          <p style={{ margin: '6px 0 0 0', fontSize: '12px', color: '#666' }}>
+            Currently blocked branch event weeks: {Array.from(blockedEventWeeks).join(', ') || 'None'}
+          </p>
+        </div>
+
+        {/* 3. Seniority Queue Turn Manager */}
+        <div className="no-print" style={{ background: '#f8f9fa', padding: '16px', borderRadius: '6px', margin: '20px 0', border: '1px solid #dee2e6' }}>
           <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#003366' }}>Manage Bidding Turn Queue (Seniority Order)</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: '10px' }}>
             <select 
@@ -320,8 +446,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Manual Slot Overrides */}
-        <div style={{ background: '#f8f9fa', padding: '16px', borderRadius: '6px', margin: '20px 0', border: '1px solid #dee2e6' }}>
+        {/* 4. Manual Slot Overrides */}
+        <div className="no-print" style={{ background: '#f8f9fa', padding: '16px', borderRadius: '6px', margin: '20px 0', border: '1px solid #dee2e6' }}>
           <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#003366' }}>Manual Vacation Week Slot Override</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '10px' }}>
             <select 
@@ -355,10 +481,10 @@ export default function App() {
           </div>
         </div>
 
-        {/* CLEAN MASTER PRINT LIST & PS 3971 CHECKLIST */}
-        <div style={{ marginTop: '30px' }}>
+        {/* PRINTABLE ONLY SECTION: Master Vacation Roster & PS 3971 Checklist */}
+        <div id="printable-roster" style={{ marginTop: '30px' }}>
           <h3 style={{ fontSize: '18px', color: '#003366', borderBottom: '2px solid #003366', paddingBottom: '6px' }}>
-            Master Vacation Roster & PS 3971 Tracking
+            NALC Branch 366 — Master Vacation Roster & PS 3971 Tracking
           </h3>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '14px' }}>
@@ -406,6 +532,7 @@ export default function App() {
         </div>
 
         <button 
+          className="no-print"
           onClick={() => setCurrentCarrier(null)}
           style={{ marginTop: '30px', padding: '12px 20px', background: '#dc3545', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
         >
@@ -428,7 +555,7 @@ export default function App() {
       </div>
 
       <p style={{ color: '#445', fontSize: '15px', lineHeight: '1.5' }}>
-        Select your desired vacation weeks from the calendar grid below. Grayed-out weeks are already locked in by senior carriers.
+        Select your desired vacation weeks from the calendar grid below. Grayed-out weeks are already locked in by senior carriers or blocked for union events.
       </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', margin: '20px 0' }}>
@@ -467,7 +594,7 @@ export default function App() {
                 fontSize: '14px'
               }}
             >
-              Wk {week}
+              Wk {week} {blockedEventWeeks.has(strWeek) ? '🔒' : ''}
             </button>
           );
         })}
