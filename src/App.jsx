@@ -517,41 +517,56 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
     window.location.reload();
   };
 
-          const handlePrintMasterList = () => {
+    const handlePrintMasterList = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return alert("Please allow popups.");
 
-    const baseDate = new Date(2027, 0, 4); // First Monday of 2027
+    const baseDate = new Date(2027, 0, 4);
 
-    const formatWeeks = (val) => {
+    const getDatesForWeeks = (val) => {
       if (!val) return '-';
-      const arr = Array.isArray(val) ? val : String(val).split(',').filter(Boolean);
-      if (!arr.length) return '-';
+      let nums = [];
 
-      return arr.map(w => {
-        const num = Number(w);
+      if (Array.isArray(val)) {
+        nums = val.map(item => (typeof item === 'object' && item !== null) ? (item.weekNum || item.week || item.id) : item);
+      } else if (typeof val === 'string') {
+        nums = val.split(',').map(s => parseInt(s.trim())).filter(Boolean);
+      } else if (typeof val === 'number') {
+        nums = [val];
+      }
+
+      return nums.map(weekNum => {
+        const num = Number(weekNum);
         if (isNaN(num)) return null;
-        
-        const start = new Date(baseDate);
-        start.setDate(baseDate.getDate() + (num - 1) * 7);
-        const end = new Date(start);
-        end.setDate(start.getDate() + 6);
 
-        const fmt = d => `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
-        return `${fmt(start)} - ${fmt(end)}`;
+        const startDate = new Date(baseDate);
+        startDate.setDate(baseDate.getDate() + (num - 1) * 7);
+
+        const endDate = new Date(startDate);
+        endDate.setDate(startDate.getDate() + 6);
+
+        const format = (d) => {
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${m}/${day}`;
+        };
+
+        return `${format(startDate)} - ${format(endDate)}`;
       }).filter(Boolean).join(', ') || '-';
     };
 
-    const rows = carriers.map((c, i) => `
-      <tr>
-        <td>#${i + 1}</td>
-        <td>${c.name || 'Unknown'}</td>
-        <td>${c.cat || c.category || '-'}</td>
-        <td>${formatWeeks(c.round1Choice || c.round1)}</td>
-        <td>${formatWeeks(c.round2Choice || c.round2)}</td>
-        <td><input type="checkbox" style="width: 16px; height: 16px;" /></td>
-      </tr>
-    `).join('');
+    const rosterRows = carriers.map((c, index) => {
+      return `
+        <tr>
+          <td>#${index + 1}</td>
+          <td>${c.name || 'Unknown'}</td>
+          <td>${c.cat || c.category || '-'}</td>
+          <td>${getDatesForWeeks(c.round1Choice)}</td>
+          <td>${getDatesForWeeks(c.round2Choice)}</td>
+          <td><input type="checkbox" style="width:16px; height:16px;" /></td>
+        </tr>
+      `;
+    }).join('');
 
     printWindow.document.write(`
       <html>
@@ -578,7 +593,9 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
                 <th>PS 3971</th>
               </tr>
             </thead>
-            <tbody>${rows}</tbody>
+            <tbody>
+              ${rosterRows}
+            </tbody>
           </table>
         </body>
       </html>
@@ -588,6 +605,7 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
     printWindow.focus();
     setTimeout(() => printWindow.print(), 500);
   };
+   
 
 
   if (!isDataLoaded) {
