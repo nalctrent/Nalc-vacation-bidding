@@ -425,23 +425,83 @@ export default function App() {
     window.location.reload();
   };
 
-
-    const handlePrintMasterList = () => {
+  const handlePrintMasterList = () => {
     let rowsHtml = '';
+    
     sortedCarriers.forEach(c => {
-      const r1 = c.round1Choice || c.round1_choice || [];
-      const r2 = c.round2Choice || c.round2_choice || [];
-      const submitted = c.ps3971_submitted || c.ps3971Submitted || false;
+      const r1 = Array.isArray(c.round1Choice) ? c.round1Choice.join(', ') : (c.round1Choice || '-');
+      const r2 = Array.isArray(c.round2Choice) ? c.round2Choice.join(', ') : (c.round2Choice || '-');
+      const submitted = c.ps3971_submitted ? 'Yes' : 'No';
 
       rowsHtml += `<tr>
-        <td style="text-align:center;">#${c.seniority_order || '-'}</td>
-        <td><b>${c.name || 'Unknown'}</b></td>
-        <td style="text-align:center;">${c.category || '-'}</td>
-        <td>${formatWeeksWithDates(r1)}</td>
-        <td>${formatWeeksWithDates(r2)}</td>
-        <td style="text-align:center;">${submitted ? 'Yes' : 'No'}</td>
+        <td style="text-align:center; padding: 8px; border: 1px solid #333;">#${c.seniority_order || '-'}</td>
+        <td style="padding: 8px; border: 1px solid #333;"><b>${c.name || 'Unknown'}</b></td>
+        <td style="text-align:center; padding: 8px; border: 1px solid #333;">${c.category || '-'}</td>
+        <td style="padding: 8px; border: 1px solid #333;">${r1}</td>
+        <td style="padding: 8px; border: 1px solid #333;">${r2}</td>
+        <td style="text-align:center; padding: 8px; border: 1px solid #333;">${submitted}</td>
       </tr>`;
     });
+
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Master Roster</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; color: #000; }
+            h2 { text-align: center; color: #003366; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
+            th { background: #003366; color: #fff; padding: 10px; border: 1px solid #333; }
+          </style>
+        </head>
+        <body>
+          <h2>NALC Branch 366 Master Roster</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Priority</th>
+                <th>Name</th>
+                <th>Cat</th>
+                <th>Round 1</th>
+                <th>Round 2</th>
+                <th>PS 3971</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const oldFrame = document.getElementById('print-master-frame');
+    if (oldFrame) oldFrame.remove();
+
+    const iframe = document.createElement('iframe');
+    iframe.id = 'print-master-frame';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(fullHtml);
+    doc.close();
+
+    setTimeout(() => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    }, 300);
+  };
+
+    
 
     const fullHtml = `
       <!DOCTYPE html>
