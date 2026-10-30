@@ -425,29 +425,52 @@ export default function App() {
     window.location.reload();
   };
 
-     const handlePrintMasterList = () => {
+       const handlePrintMasterList = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       alert("Please allow popups for this site to print the master list.");
       return;
     }
 
-    let html = `<html><head><title>Master Roster</title><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:20px;font-size:12px;}th,td{padding:8px;border:1px solid #333;}th{background:#003366;color:#fff;}.center{text-align:center;}.checkbox{width:18px;height:18px;border:2px solid #333;display:inline-block;}</style></head><body><h2>NALC Branch 366 Master Roster</h2><table><thead><tr><th>Priority</th><th>Name</th><th>Cat</th><th>Round 1</th><th>Round 2</th><th>PS 3971</th></tr></thead><tbody>`;
+    // Helper to map week numbers/strings to actual dates if you have a weeks configuration array in your app
+    // Falls back gracefully if your app defines vacation weeks differently
+    const getWeekDisplay = (val) => {
+      if (!val) return '-';
+      // If it's already a formatted string with dates, return it
+      if (typeof val === 'string' && (val.includes('/') || val.includes('-') || val.length > 10)) {
+        return val;
+      }
+      // If you have a global vacation weeks array (like 'vacationWeeks' or 'LEAVE_WEEKS'), we can map them:
+      const weekNums = Array.isArray(val) ? val : String(val).split(',').map(s => parseInt(s.trim())).filter(Boolean);
+      
+      if (typeof vacationWeeks !== 'undefined' && Array.isArray(vacationWeeks)) {
+        return weekNums.map(num => {
+          const w = vacationWeeks.find(item => item.weekNumber === num || item.id === num);
+          return w ? `${w.startDate} - ${w.endDate}` : `Week ${num}`;
+        }).join(', ');
+      }
+      
+      // Fallback: if formatWeeksWithDates exists in scope
+      if (typeof formatWeeksWithDates === 'function') {
+        const formatted = formatWeeksWithDates(val);
+        if (formatted && formatted !== '-' && formatted.length > 2) return formatted;
+      }
+
+      return Array.isArray(val) ? val.join(', ') : val;
+    };
+
+    let html = `<html><head><title>Master Roster</title><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:20px;font-size:11px;}th,td{padding:6px;border:1px solid #333;}th{background:#003366;color:#fff;}.center{text-align:center;}.checkbox{width:16px;height:16px;border:2px solid #333;display:inline-block;vertical-align:middle;}</style></head><body><h2>NALC Branch 366 Master Roster</h2><table><thead><tr><th>Priority</th><th>Name</th><th>Cat</th><th>Round 1</th><th>Round 2</th><th>PS 3971</th></tr></thead><tbody>`;
     
     sortedCarriers.forEach(c => {
       const r1 = c.round1Choice || c.round1_choice || [];
       const r2 = c.round2Choice || c.round2_choice || [];
 
-      // Formats week numbers into real calendar dates using your helper function if available
-      const formattedR1 = typeof formatWeeksWithDates === 'function' ? formatWeeksWithDates(r1) : (Array.isArray(r1) ? r1.join(', ') : (r1 || '-'));
-      const formattedR2 = typeof formatWeeksWithDates === 'function' ? formatWeeksWithDates(r2) : (Array.isArray(r2) ? r2.join(', ') : (r2 || '-'));
-
       html += `<tr>
         <td class="center">#${c.seniority_order || '-'}</td>
         <td><b>${c.name || 'Unknown'}</b></td>
         <td class="center">${c.category || '-'}</td>
-        <td>${formattedR1}</td>
-        <td>${formattedR2}</td>
+        <td>${getWeekDisplay(r1)}</td>
+        <td>${getWeekDisplay(r2)}</td>
         <td class="center"><span class="checkbox"></span></td>
       </tr>`;
     });
@@ -457,6 +480,7 @@ export default function App() {
     printWindow.document.close();
     setTimeout(() => printWindow.print(), 500);
   };
+
 
 
   if (!isDataLoaded) {
