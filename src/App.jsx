@@ -522,7 +522,9 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
       return;
     }
 
-    // Direct date converter for 2026 vacation weeks (starts Jan 3, 2026)
+        // Generate the correct 2027 weeks array to use for lookups
+    const weeks = generateYearWeeks();
+
     const getDatesForWeeks = (val) => {
       if (!val) return '-';
       
@@ -535,43 +537,13 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
         nums = [val];
       }
 
-      if (nums.length === 0) return '-';
-
-      const baseDate = new Date(2026, 0, 3); // First Saturday of Jan 2026
-
+      // Map week numbers directly to the 2027 calendar date strings
       return nums.map(weekNum => {
-        const startDayOffset = (weekNum - 1) * 7;
-        const startDate = new Date(baseDate);
-        startDate.setDate(baseDate.getDate() + startDayOffset);
-
-        const endDate = new Date(startDate);
-        endDate.setDate(startDate.getDate() + 6);
-
-        const format = (d) => {
-          const m = String(d.getMonth() + 1).padStart(2, '0');
-          const day = String(d.getDate()).padStart(2, '0');
-          return `${m}/${day}`;
-        };
-
-        return `${format(startDate)} - ${format(endDate)}`;
-      }).join(', ');
+        const foundWeek = weeks.find(w => w.weekNum === weekNum);
+        return foundWeek ? foundWeek.dateString : null;
+      }).filter(Boolean).join(', ') || '-';
     };
 
-    let html = `<html><head><title>Master Roster</title><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:20px;font-size:11px;}th,td{padding:6px;border:1px solid #333;}th{background:#003366;color:#fff;}.center{text-align:center;}.checkbox{width:16px;height:16px;border:2px solid #333;display:inline-block;vertical-align:middle;}</style></head><body><h2>NALC Branch 366 Master Roster</h2><table><thead><tr><th>Priority</th><th>Name</th><th>Cat</th><th>Round 1</th><th>Round 2</th><th>PS 3971</th></tr></thead><tbody>`;
-    
-    sortedCarriers.forEach(c => {
-      const r1 = c.round1Choice || c.round1_choice || [];
-      const r2 = c.round2Choice || c.round2_choice || [];
-
-      html += `<tr>
-        <td class="center">#${c.seniority_order || '-'}</td>
-        <td><b>${c.name || 'Unknown'}</b></td>
-        <td class="center">${c.category || '-'}</td>
-        <td>${getDatesForWeeks(r1)}</td>
-        <td>${getDatesForWeeks(r2)}</td>
-        <td class="center"><span class="checkbox"></span></td>
-      </tr>`;
-    });
 
     html += `</tbody></table></body></html>`;
     printWindow.document.write(html);
