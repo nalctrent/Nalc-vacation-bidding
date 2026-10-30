@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://zvixsdcwogzmvdtkopjq.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2aXhzZGN3b2d6bXZkdGtvcGpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyMjcwNDUsImV4cCI6MjEwODgwMzA0NX0.LDHZC7SjEBdSVvdm1aVXvZ7MmueIwHwEnK5z6EQfYws';
-const supabase = createClient(supabaseUrl, supabaseKey);
+import { supabase } from './supabaseClient';
 
 const calculateBiddingDeadline = (startDate = new Date()) => {
   const deadline = new Date(startDate.getTime() + 48 * 60 * 60 * 1000);
