@@ -515,7 +515,7 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
     window.location.reload();
   };
 
-           const handlePrintMasterList = () => {
+    const handlePrintMasterList = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       alert("Please allow popups for this site to print the master list.");
@@ -542,15 +542,19 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
         }).filter(Boolean).join(', ') || '-';
       };
 
-      // Build your roster rows using the safe getDatesForWeeks converter
       const rosterRows = carriers.map((c, index) => {
+        // Check multiple common property names to ensure data displays correctly
+        const category = c.cat || c.category || '-';
+        const round1Data = c.round1 || c.r1 || (c.rounds && c.rounds[0]) || '-';
+        const round2Data = c.round2 || c.r2 || (c.rounds && c.rounds[1]) || '-';
+
         return `
           <tr>
             <td>#${index + 1}</td>
-            <td>${c.name}</td>
-            <td>${c.cat || '-'}</td>
-            <td>${getDatesForWeeks(c.round1)}</td>
-            <td>${getDatesForWeeks(c.round2)}</td>
+            <td>${c.name || 'Unknown'}</td>
+            <td>${category}</td>
+            <td>${getDatesForWeeks(round1Data)}</td>
+            <td>${getDatesForWeeks(round2Data)}</td>
             <td>[ ]</td>
           </tr>
         `;
@@ -600,6 +604,7 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
       alert("An error occurred while generating the print list.");
     }
   };
+
 
   if (!isDataLoaded) {
 
