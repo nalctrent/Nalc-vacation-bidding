@@ -341,14 +341,17 @@ export default function App() {
   const handleSubmitBid = async () => {
     if (selectedWeeks.length === 0 || !currentCarrier) return;
     
-const r1 = Array.isArray(currentCarrier.round1Choice) 
-      ? currentCarrier.round1Choice 
-      : String(currentCarrier.round1Choice || '').split(',').map(s => String(s).trim());
-      
-    const hasOverlap = selectedWeeks.some(week => r1.includes(String(week)));
-    if (hasOverlap) {
-      alert("Error: You cannot select a week that you already picked in Round 1.");
-      return;
+const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
+    const r1Array = Array.isArray(rawR1)
+      ? rawR1.map(String)
+      : String(rawR1).split(',').map(s => s.trim()).filter(Boolean);
+
+    if (r1Array.length > 0) {
+      const hasOverlap = selectedWeeks.some(week => r1Array.includes(String(week)));
+      if (hasOverlap) {
+        alert("Error: You cannot select a week in Round 2 that you already picked in Round 1.");
+        return;
+      }
     }
     
     const hasCompletedR1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
