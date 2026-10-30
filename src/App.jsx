@@ -451,6 +451,7 @@ export default function App() {
     setTimeout(() => printWindow.print(), 500);
   };
 
+  
     const fullHtml = `
       <!DOCTYPE html>
       <html>
