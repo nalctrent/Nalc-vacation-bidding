@@ -248,14 +248,13 @@ export default function App() {
     window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
   };
 
-    const handleAddCarrier = async (e) => {
+      const handleAddCarrier = async (e) => {
     e.preventDefault();
     if (!newCarrierName.trim()) return;
 
     const targetRank = Number(newCarrierRank);
     const pinVal = newCarrierPin.trim() || '1234';
 
-    // 1. Check if the entered seniority rank is already taken
     if (targetRank) {
       const existingCarrierWithRank = carriers.find(
         c => Number(c.seniority_order) === targetRank
@@ -268,15 +267,16 @@ export default function App() {
           `Are you sure you want to proceed?`
         );
 
-        if (!confirmBump) return; // Abort if they click Cancel
+        if (!confirmBump) return;
 
-        // 2. Bump existing carriers at or below targetRank down by 1 in Supabase
+        // 1. Fetch carriers that need to be bumped down
         const { data: carriersToBump, error: fetchErr } = await supabase
           .from('carriers')
           .select('id, seniority_order')
           .gte('seniority_order', targetRank)
           .order('seniority_order', { ascending: false });
 
+        // 2. Wait for ALL bumps to complete before inserting
         if (!fetchErr && carriersToBump && carriersToBump.length > 0) {
           for (const carrier of carriersToBump) {
             await supabase
@@ -290,7 +290,6 @@ export default function App() {
 
     // 3. Build the new carrier object
     const newCarrier = {
-      id: String(Date.now()),
       name: newCarrierName.trim(),
       category: Number(newCarrierCategory) || 1,
       phone: newCarrierPhone.trim(),
@@ -306,24 +305,37 @@ export default function App() {
     };
 
     try {
-      const { error } = await supabase.from('carriers').insert([newCarrier]);
+      // 4. Insert into Supabase
+      const { data, error } = await supabase
+        .from('carriers')
+        .insert([newCarrier])
+        .select();
+
       if (error) throw error;
 
+      // 5. Re-fetch full master list from Supabase to refresh state everywhere
+      const { data: refreshedCarriers, error: listErr } = await supabase
+        .from('carriers')
+        .select('*')
+        .order('seniority_order', { ascending: true });
+
+      if (!listErr && refreshedCarriers) {
+        if (typeof setCarriers === 'function') setCarriers(refreshedCarriers);
+        if (typeof saveCarriersState === 'function') saveCarriersState(refreshedCarriers);
+      }
+
+      // Reset form fields
       setNewCarrierName('');
       setNewCarrierPin('');
       setNewCarrierPhone('');
       setNewCarrierContact('');
       setNewCarrierRank('');
-      
+
       alert(`Successfully added ${newCarrier.name}!`);
-      
-      // Refresh your carriers state/list from Supabase here if you have a fetch function
-      if (typeof fetchCarriers === 'function') fetchCarriers();
     } catch (err) {
       alert("Error adding carrier: " + err.message);
     }
   };
-
 
   const handleUpdateRank = async (id, newRank) => {
     const updated = carriers.map(c => c.id === id ? { ...c, seniority_order: Number(newRank) } : c);
