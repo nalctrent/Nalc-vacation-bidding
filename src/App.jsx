@@ -248,31 +248,82 @@ export default function App() {
     window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
   };
 
-  const handleAddCarrier = async (e) => {
+    const handleAddCarrier = async (e) => {
     e.preventDefault();
     if (!newCarrierName.trim()) return;
-    const pinVal = newCarrierPin.trim() || (newCarrierPhone ? newCarrierPhone.slice(-4) : '1234');
+
+    const targetRank = Number(newCarrierRank);
+    const pinVal = newCarrierPin.trim() || '1234';
+
+    // 1. Check if the entered seniority rank is already taken
+    if (targetRank) {
+      const existingCarrierWithRank = carriers.find(
+        c => Number(c.seniority_order) === targetRank
+      );
+
+      if (existingCarrierWithRank) {
+        const confirmBump = window.confirm(
+          `Warning: Seniority #${targetRank} is already assigned to ${existingCarrierWithRank.name || 'another carrier'}.\n\n` +
+          `Proceeding will bump this carrier and everyone below them down by 1 position.\n\n` +
+          `Are you sure you want to proceed?`
+        );
+
+        if (!confirmBump) return; // Abort if they click Cancel
+
+        // 2. Bump existing carriers at or below targetRank down by 1 in Supabase
+        const { data: carriersToBump, error: fetchErr } = await supabase
+          .from('carriers')
+          .select('id, seniority_order')
+          .gte('seniority_order', targetRank)
+          .order('seniority_order', { ascending: false });
+
+        if (!fetchErr && carriersToBump && carriersToBump.length > 0) {
+          for (const carrier of carriersToBump) {
+            await supabase
+              .from('carriers')
+              .update({ seniority_order: carrier.seniority_order + 1 })
+              .eq('id', carrier.id);
+          }
+        }
+      }
+    }
+
+    // 3. Build the new carrier object
     const newCarrier = {
       id: String(Date.now()),
       name: newCarrierName.trim(),
-      category: Number(newCarrierCategory),
+      category: Number(newCarrierCategory) || 1,
       phone: newCarrierPhone.trim(),
       pin: pinVal,
       contact: newCarrierContact.trim(),
       round1Choice: [],
       round2Choice: [],
       ps3971_submitted: false,
-      seniority_order: newCarrierRank ? Number(newCarrierRank) : carriers.length + 1,
+      seniority_order: targetRank || (carriers.length + 1),
       link_sent_at: null,
       deadline_at: null,
       status: 'pending'
     };
-    const updated = [...carriers, newCarrier];
-    saveCarriersState(updated);
-    try { await supabase.from('carriers').insert([newCarrier]); } catch (err) {}
-    setNewCarrierName(''); setNewCarrierPhone(''); setNewCarrierPin(''); setNewCarrierContact(''); setNewCarrierRank('');
-    alert(`Successfully added ${newCarrier.name} with PIN: ${pinVal}!`);
+
+    try {
+      const { error } = await supabase.from('carriers').insert([newCarrier]);
+      if (error) throw error;
+
+      setNewCarrierName('');
+      setNewCarrierPin('');
+      setNewCarrierPhone('');
+      setNewCarrierContact('');
+      setNewCarrierRank('');
+      
+      alert(`Successfully added ${newCarrier.name}!`);
+      
+      // Refresh your carriers state/list from Supabase here if you have a fetch function
+      if (typeof fetchCarriers === 'function') fetchCarriers();
+    } catch (err) {
+      alert("Error adding carrier: " + err.message);
+    }
   };
+
 
   const handleUpdateRank = async (id, newRank) => {
     const updated = carriers.map(c => c.id === id ? { ...c, seniority_order: Number(newRank) } : c);
