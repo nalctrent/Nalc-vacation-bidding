@@ -515,40 +515,90 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
     window.location.reload();
   };
 
-         const handlePrintMasterList = () => {
+           const handlePrintMasterList = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       alert("Please allow popups for this site to print the master list.");
       return;
     }
 
-        // Generate the correct 2027 weeks array to use for lookups
-    const weeks = generateYearWeeks();
+    try {
+      const weeks = generateYearWeeks();
 
-    const getDatesForWeeks = (val) => {
-      if (!val) return '-';
-      
-      let nums = [];
-      if (Array.isArray(val)) {
-        nums = val;
-      } else if (typeof val === 'string') {
-        nums = val.split(',').map(s => parseInt(s.trim())).filter(Boolean);
-      } else if (typeof val === 'number') {
-        nums = [val];
-      }
+      const getDatesForWeeks = (val) => {
+        if (!val) return '-';
+        let nums = [];
+        if (Array.isArray(val)) {
+          nums = val;
+        } else if (typeof val === 'string') {
+          nums = val.split(',').map(s => parseInt(s.trim())).filter(Boolean);
+        } else if (typeof val === 'number') {
+          nums = [val];
+        }
 
-      // Map week numbers directly to the 2027 calendar date strings
-      return nums.map(weekNum => {
-        const foundWeek = weeks.find(w => w.weekNum === weekNum);
-        return foundWeek ? foundWeek.dateString : null;
-      }).filter(Boolean).join(', ') || '-';
-    };
+        return nums.map(weekNum => {
+          const foundWeek = weeks.find(w => w.weekNum === weekNum);
+          return foundWeek ? foundWeek.dateString : null;
+        }).filter(Boolean).join(', ') || '-';
+      };
 
+      // Build your roster rows using the safe getDatesForWeeks converter
+      const rosterRows = carriers.map((c, index) => {
+        return `
+          <tr>
+            <td>#${index + 1}</td>
+            <td>${c.name}</td>
+            <td>${c.cat || '-'}</td>
+            <td>${getDatesForWeeks(c.round1)}</td>
+            <td>${getDatesForWeeks(c.round2)}</td>
+            <td>[ ]</td>
+          </tr>
+        `;
+      }).join('');
 
-    html += `</tbody></table></body></html>`;
-    printWindow.document.write(html);
-    printWindow.document.close();
-    setTimeout(() => printWindow.print(), 500);
+      let html = `
+        <html>
+          <head>
+            <title>NALC Branch 366 Master Roster</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 20px; }
+              h2 { text-align: center; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+              th, td { border: 1px solid #000; padding: 8px; text-align: center; font-size: 12px; }
+              th { background-color: #f2f2f2; }
+            </style>
+          </head>
+          <body>
+            <h2>NALC Branch 366 Master Roster</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Priority</th>
+                  <th>Name</th>
+                  <th>Cat</th>
+                  <th>Round 1</th>
+                  <th>Round 2</th>
+                  <th>PS 3971</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rosterRows}
+              </tbody>
+            </table>
+          </body>
+        </html>
+      `;
+
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => printWindow.print(), 500);
+
+    } catch (err) {
+      console.error("Print error:", err);
+      alert("An error occurred while generating the print list.");
+    }
   };
 
   if (!isDataLoaded) {
