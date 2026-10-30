@@ -347,15 +347,15 @@ export default function App() {
       ? { round1Choice: selectedWeeks } 
       : { round2Choice: selectedWeeks };
 
-    try {
-      // 1. Try updating with numeric ID conversion and append .select()
+        try {
+      // 1. Try updating with numeric ID
       let { data, error } = await supabase
         .from('carriers')
         .update(fieldToUpdate)
         .eq('id', Number(currentCarrier.id))
         .select();
 
-      // 2. Fallback: match by exact Carrier Name if ID matched 0 rows
+      // 2. Fallback: match by exact Carrier Name
       if (error || !data || data.length === 0) {
         const fallback = await supabase
           .from('carriers')
@@ -367,19 +367,31 @@ export default function App() {
         error = fallback.error;
       }
 
-      if (error) {
-        alert(`Supabase Error: ${error.message}`);
-        return;
+      // 3. AUTO-INSERT FIX: If row doesn't exist in Supabase, create it automatically!
+      if (!data || data.length === 0) {
+        const payload = {
+          ...currentCarrier,
+          id: Number(currentCarrier.id) || 1,
+          ...fieldToUpdate
+        };
+        const upsertResult = await supabase
+          .from('carriers')
+          .upsert([payload])
+          .select();
+
+        data = upsertResult.data;
+        error = upsertResult.error;
       }
 
-      if (!data || data.length === 0) {
-        alert("Database write error: Unable to locate matching carrier row in Supabase.");
+      if (error) {
+        alert(`Supabase Error: ${error.message}`);
         return;
       }
     } catch (err) {
       alert(`Network Error: ${err.message}`);
       return;
     }
+
 
     // Determine who is next after this submission
     const nextPerson = sortedCarriers.find(c => 
