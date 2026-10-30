@@ -426,121 +426,12 @@ export default function App() {
   };
 
     
-  const handlePrintMasterList = () => {
+   const handlePrintMasterList = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       alert("Please allow popups for this site to print the master list.");
       return;
     }
-
-    let html = `<html><head><title>Master Roster</title><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:20px;font-size:12px;}th,td{padding:8px;border:1px solid #333;}th{background:#003366;color:#fff;}.center{text-align:center;}</style></head><body><h2>NALC Branch 366 Master Roster</h2><table><thead><tr><th>Priority</th><th>Name</th><th>Cat</th><th>Round 1</th><th>Round 2</th><th>PS 3971</th></tr></thead><tbody>`;
-    
-    sortedCarriers.forEach(c => {
-      html += `<tr>
-        <td class="center">#${c.seniority_order || '-'}</td>
-        <td><b>${c.name || 'Unknown'}</b></td>
-        <td class="center">${c.category || '-'}</td>
-        <td>${typeof formatWeeksWithDates === 'function' ? formatWeeksWithDates(c.round1Choice) : (c.round1Choice || '-')}</td>
-        <td>${typeof formatWeeksWithDates === 'function' ? formatWeeksWithDates(c.round2Choice) : (c.round2Choice || '-')}</td>
-        <td class="center">${c.ps3971_submitted ? 'Yes' : 'No'}</td>
-      </tr>`;
-    });
-
-    html += `</tbody></table></body></html>`;
-    printWindow.document.write(html);
-    printWindow.document.close();
-    setTimeout(() => printWindow.print(), 500);
-  };
-
-
-    const oldFrame = document.getElementById('print-master-frame');
-    if (oldFrame) oldFrame.remove();
-
-    const iframe = document.createElement('iframe');
-    iframe.id = 'print-master-frame';
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
-
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow.document;
-    doc.open();
-    doc.write(fullHtml);
-    doc.close();
-
-    setTimeout(() => {
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
-    }, 300);
-  };
-
-    
-
-    const fullHtml = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Master Roster</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 15px; color: #000; }
-            h2 { margin-bottom: 10px; text-align: center; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
-            th, td { padding: 8px; border: 1px solid #333; }
-            th { background: #003366; color: #fff; }
-          </style>
-        </head>
-        <body>
-          <h2>NALC Branch 366 Master Roster</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Priority</th>
-                <th>Name</th>
-                <th>Cat</th>
-                <th>Round 1</th>
-                <th>Round 2</th>
-                <th>PS 3971</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `;
-
-    // Remove old iframe if present
-    const oldFrame = document.getElementById('print-master-frame');
-    if (oldFrame) oldFrame.remove();
-
-    // Create a hidden iframe on the current page
-    const iframe = document.createElement('iframe');
-    iframe.id = 'print-master-frame';
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
-
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow.document;
-    doc.open();
-    doc.write(fullHtml);
-    doc.close();
-
-    // Wait for content to render before opening print sheet
-    setTimeout(() => {
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
-    }, 250);
-  };
 
     let html = `<html><head><title>Master Roster</title><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:20px;font-size:12px;}th,td{padding:8px;border:1px solid #333;}th{background:#003366;color:#fff;}.center{text-align:center;}</style></head><body><h2>NALC Branch 366 Master Roster</h2><table><thead><tr><th>Priority</th><th>Name</th><th>Cat</th><th>Round 1</th><th>Round 2</th><th>PS 3971</th></tr></thead><tbody>`;
     
@@ -553,8 +444,8 @@ export default function App() {
         <td class="center">#${c.seniority_order || '-'}</td>
         <td><b>${c.name || 'Unknown'}</b></td>
         <td class="center">${c.category || '-'}</td>
-        <td>${formatWeeksWithDates(r1)}</td>
-        <td>${formatWeeksWithDates(r2)}</td>
+        <td>${typeof formatWeeksWithDates === 'function' ? formatWeeksWithDates(r1) : (Array.isArray(r1) ? r1.join(', ') : r1)}</td>
+        <td>${typeof formatWeeksWithDates === 'function' ? formatWeeksWithDates(r2) : (Array.isArray(r2) ? r2.join(', ') : r2)}</td>
         <td class="center">${submitted ? 'Yes' : 'No'}</td>
       </tr>`;
     });
@@ -564,6 +455,7 @@ export default function App() {
     printWindow.document.close();
     setTimeout(() => printWindow.print(), 500);
   };
+
 
   if (!isDataLoaded) {
     return <div style={{ textAlign: 'center', padding: '50px', fontFamily: 'Arial' }}><h2>Loading NALC Branch 366 Portal...</h2></div>;
