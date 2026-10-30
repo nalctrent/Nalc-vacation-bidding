@@ -30,6 +30,7 @@ const generateYearWeeks = () => {
     startDate.setDate(startDate.getDate() + 1);
   }
 
+  
   for (let i = 0; i < 52; i++) {
     const start = new Date(startDate);
     start.setDate(startDate.getDate() + (i * 7));
