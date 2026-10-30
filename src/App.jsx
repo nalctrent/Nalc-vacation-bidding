@@ -337,7 +337,7 @@ export default function App() {
     setSelectedWeeks([...selectedWeeks, weekNum].sort((a, b) => a - b));
   };
 
-  // SUBMIT BID, UPDATE SUPABASE, AND TRIGGER BACKEND NOTIFY API
+    // SUBMIT BID, UPDATE SUPABASE WITH EXACT ROW RETURN, AND TRIGGER BACKEND NOTIFY API
   const handleSubmitBid = async () => {
     if (selectedWeeks.length === 0 || !currentCarrier) return;
 
@@ -348,13 +348,32 @@ export default function App() {
       : { round2Choice: selectedWeeks };
 
     try {
-      const { error } = await supabase
+      // 1. Try updating with numeric ID conversion and append .select()
+      let { data, error } = await supabase
         .from('carriers')
         .update(fieldToUpdate)
-        .eq('id', currentCarrier.id);
+        .eq('id', Number(currentCarrier.id))
+        .select();
+
+      // 2. Fallback: match by exact Carrier Name if ID matched 0 rows
+      if (error || !data || data.length === 0) {
+        const fallback = await supabase
+          .from('carriers')
+          .update(fieldToUpdate)
+          .eq('name', currentCarrier.name)
+          .select();
+          
+        data = fallback.data;
+        error = fallback.error;
+      }
 
       if (error) {
         alert(`Supabase Error: ${error.message}`);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        alert("Database write error: Unable to locate matching carrier row in Supabase.");
         return;
       }
     } catch (err) {
@@ -368,7 +387,7 @@ export default function App() {
       (activeRound === 1 ? (!c.round1Choice || c.round1Choice.length === 0) : (!c.round2Choice || c.round2Choice.length === 0))
     );
 
-    // Call your secure backend notify function (/api/notify)
+    // Trigger secure backend notify function
     try {
       await fetch('/api/notify', {
         method: 'POST',
@@ -378,8 +397,8 @@ export default function App() {
         body: JSON.stringify({
           carrierName: currentCarrier.name,
           round: `Round ${activeRound}`,
-          selectedWeeks: selectedWeeks.join(', '),
-          nextCarrier: nextPerson ? nextPerson.name : 'None (All Complete)'
+          selectedWeeks: selectedWeeks.map(w => `Week ${w}`).join(', '),
+          nextCarrier: nextPerson ? `${nextPerson.name} (#${nextPerson.seniority_order})` : 'None (All Complete)'
         })
       });
     } catch (e) {
@@ -394,13 +413,6 @@ export default function App() {
     window.location.reload();
   };
 
-  const formatWeeksWithDates = (weekNums) => {
-    if (!weekNums || weekNums.length === 0) return 'Pending';
-    return weekNums.map(num => {
-      const w = CALENDAR_WEEKS.find(wk => wk.weekNum === Number(num));
-      return w ? `Wk ${num} (${w.dateString})` : `Wk ${num}`;
-    }).join(', ');
-  };
 
   const handlePrintMasterList = () => {
     const printWindow = window.open('', '_blank');
