@@ -22,26 +22,44 @@ const calculateBiddingDeadline = (startDate = new Date()) => {
 
 const generateYearWeeks = () => {
   const weeks = [];
-  const startDate = new Date(new Date().getFullYear(), 0, 5); 
-  const day = startDate.getDay();
-  const diff = startDate.getDate() - day + (day === 0 ? -6 : 1);
-  startDate.setDate(diff);
+  
+  // Start from Jan 1st of current year
+  const currentYear = new Date().getFullYear();
+  let startDate = new Date(currentYear, 0, 1);
+  
+  // Adjust to the first Monday of the year
+  const day = startDate.getDay(); // 0 = Sun, 1 = Mon, ...
+  const diff = day === 0 ? 1 : (day === 1 ? 0 : 8 - day);
+  startDate.setDate(startDate.getDate() + diff);
 
   for (let i = 0; i < 52; i++) {
     const start = new Date(startDate);
     start.setDate(startDate.getDate() + (i * 7));
+    
     const end = new Date(start);
-    end.setDate(start.getDate() + 6);
+    end.setDate(start.getDate() + 6); // Monday + 6 days = Sunday
 
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const dateString = `${monthNames[start.getMonth()]} ${String(start.getDate()).padStart(2, '0')} - ${monthNames[end.getMonth()]} ${String(end.getDate()).padStart(2, '0')}`;
-    const month = start.getMonth();
-    const isPrimeTime = month === 5 || month === 6 || month === 7;
+    
+    const startStr = `${String(start.getMonth() + 1).padStart(2, '0')}/${String(start.getDate()).padStart(2, '0')}`;
+    const endStr = `${String(end.getMonth() + 1).padStart(2, '0')}/${String(end.getDate()).padStart(2, '0')}`;
+    const dateString = `${startStr}-${endStr}`;
 
-    weeks.push({ weekNum: i + 1, dateString, isPrimeTime });
+    const month = start.getMonth();
+    const isPrimeTime = month === 5 || month === 6 || month === 7; // Jun, Jul, Aug
+
+    weeks.push({
+      weekNum: i + 1,
+      dateString,
+      isPrimeTime,
+      start,
+      end
+    });
   }
+
   return weeks;
 };
+
 
 const CALENDAR_WEEKS = generateYearWeeks();
 
