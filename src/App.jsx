@@ -360,33 +360,37 @@ export default function App() {
     try { await supabase.from('carriers').update({ seniority_order: Number(newRank) }).eq('id', id); } catch (err) {}
   };
 
-  const handleRemoveCarrier = async (id) => {
-    if (confirm('Remove carrier?')) {
-      const targetCarrier = carriers.find(c => c.id === id);
-      const deletedRank = targetCarrier ? targetCarrier.seniority_order : null;
+    const handleRemoveCarrier = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this carrier, clear their bids, and re-rank seniority?')) return;
 
-      const updated = carriers
-        .filter(c => c.id !== id)
-        .map(c => {
-          if (deletedRank !== null && c.seniority_order > deletedRank) {
-            return { ...c, seniority_order: c.seniority_order - 1 };
-          }
-          return c;
-        });
+    // 1. Filter out the deleted carrier
+    const remainingCarriers = carriers.filter(c => c.id !== id);
 
-      saveCarriersState(updated);
+    // 2. Re-index seniority order sequentially for everyone left
+    const reindexedCarriers = remainingCarriers.map((c, index) => ({
+      ...c,
+      seniority_order: index + 1
+    }));
 
-      try {
-        await supabase.from('carriers').delete().eq('id', id);
-        for (const c of updated) {
-          if (deletedRank !== null && c.seniority_order >= deletedRank) {
-            await supabase.from('carriers').update({ seniority_order: c.seniority_order }).eq('id', c.id);
-          }
-        }
-      } catch (err) {
-        console.error('Error updating ranks after removal:', err);
-      }
+    // 3. Update local state
+    saveCarriersState(reindexedCarriers);
+
+    // 4. Delete completely from Supabase (removes them from Master Print List)
+    const { error } = await supabase.from('carriers').delete().eq('id', id);
+    if (error) {
+      alert(`Error deleting carrier from database: ${error.message}`);
+      return;
     }
+
+    // 5. Sync the new seniority numbers to Supabase
+    for (const carrier of reindexedCarriers) {
+      await supabase
+        .from('carriers')
+        .update({ seniority_order: carrier.seniority_order })
+        .eq('id', carrier.id);
+    }
+
+    alert("Carrier deleted, Master Print List updated, and seniority ranks re-indexed successfully.");
   };
 
   const togglePS3971Status = async (carrierId, currentStatus) => {
