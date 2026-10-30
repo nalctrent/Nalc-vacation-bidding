@@ -22,10 +22,11 @@ const calculateBiddingDeadline = (startDate = new Date()) => {
 
 const generateYearWeeks = () => {
   const weeks = [];
-  const currentYear = new Date().getFullYear();
+  // Target next year (2027) for vacation bidding
+  const biddingYear = new Date().getFullYear() + 1; 
   
-  // Find the first Monday of January
-  let startDate = new Date(currentYear, 0, 1);
+  // Find the first Monday of January for 2027
+  let startDate = new Date(biddingYear, 0, 1, 12, 0, 0);
   while (startDate.getDay() !== 1) {
     startDate.setDate(startDate.getDate() + 1);
   }
@@ -57,7 +58,6 @@ const generateYearWeeks = () => {
 
   return weeks;
 };
-
 
 const CALENDAR_WEEKS = generateYearWeeks();
 
