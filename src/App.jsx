@@ -339,7 +339,7 @@ export default function App() {
     setSelectedWeeks([...selectedWeeks, weekNum].sort((a, b) => a - b));
   };
 
-  // RESTORED SUBMISSION WITH RESEND EMAIL NOTIFICATIONS & CLEAN SUPABASE WRITES
+  // SUBMIT BID, UPDATE SUPABASE, AND TRIGGER BACKEND NOTIFY API
   const handleSubmitBid = async () => {
     if (selectedWeeks.length === 0 || !currentCarrier) return;
 
@@ -364,22 +364,29 @@ export default function App() {
       return;
     }
 
-    // Restored Resend Email Notification integration
+    // Determine who is next after this submission
+    const nextPerson = sortedCarriers.find(c => 
+      String(c.id) !== String(currentCarrier.id) && 
+      (activeRound === 1 ? (!c.round1Choice || c.round1Choice.length === 0) : (!c.round2Choice || c.round2Choice.length === 0))
+    );
+
+    // Call your secure backend notify function (/api/notify)
     try {
-      await fetch('https://api.resend.com/emails', {
+      await fetch('/api/notify', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer re_123456789`
         },
         body: JSON.stringify({
-          from: 'NALC Branch 366 <bidding@yourdomain.com>',
-          to: ['nalctrent@gmail.com'],
-          subject: `[BID SUBMITTED] ${currentCarrier.name} completed Round ${activeRound}`,
-          html: `<p><strong>${currentCarrier.name}</strong> (Priority #${currentCarrier.seniority_order}) submitted Round ${activeRound}.</p><p>Selected Weeks: ${selectedWeeks.join(', ')}</p>`
+          carrierName: currentCarrier.name,
+          round: `Round ${activeRound}`,
+          selectedWeeks: selectedWeeks.join(', '),
+          nextCarrier: nextPerson ? nextPerson.name : 'None (All Complete)'
         })
       });
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Notification failed to dispatch', e);
+    }
 
     localStorage.removeItem('nalc_logged_in_carrier');
     setCurrentCarrier(null);
