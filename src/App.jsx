@@ -607,6 +607,47 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
     setTimeout(() => printWindow.print(), 500);
   };
    
+  const generateRandomPin = () => Math.floor(1000 + Math.random() * 9000).toString();
+
+  const handleUpdateCarrierPin = async (carrierId) => {
+    const newPin = prompt("Enter new 4-digit PIN for this carrier:");
+    if (!newPin || newPin.length !== 4) {
+      alert("PIN must be exactly 4 digits.");
+      return;
+    }
+    const updated = carriers.map(c => c.id === carrierId ? { ...c, pin: newPin } : c);
+    saveCarriersState(updated);
+    const { error } = await supabase.from('carriers').update({ pin: newPin }).eq('id', carrierId);
+    if (error) alert(`Error updating PIN: ${error.message}`);
+    else alert("Carrier PIN updated successfully.");
+  };
+
+  const handleCancelBid = async (carrierId) => {
+    if (!window.confirm("Are you sure you want to cancel this carrier's Round 1 & Round 2 bids?")) return;
+    const clearedData = { round1Choice: [], round2Choice: [] };
+    const updated = carriers.map(c => c.id === carrierId ? { ...c, ...clearedData } : c);
+    saveCarriersState(updated);
+    const { error } = await supabase.from('carriers').update(clearedData).eq('id', carrierId);
+    if (error) alert(`Error clearing bids: ${error.message}`);
+    else alert("Bids cleared successfully.");
+  };
+
+  const handleDeleteCarrier = async (carrierId) => {
+    if (!window.confirm("Are you sure you want to delete this carrier and all their bids?")) return;
+    const updated = carriers.filter(c => c.id !== carrierId);
+    saveCarriersState(updated);
+    const { error } = await supabase.from('carriers').delete().eq('id', carrierId);
+    if (error) alert(`Error deleting carrier: ${error.message}`);
+    else alert("Carrier and their bids have been removed.");
+  };
+
+  const handleUpdateStewardPin = () => {
+    const currentStored = localStorage.getItem('nalc_steward_pin') || '1234';
+    const newPin = prompt("Enter new Steward Access PIN (4 digits):", currentStored);
+    if (!newPin) return;
+    localStorage.setItem('nalc_steward_pin', newPin);
+    alert("Steward access PIN updated successfully.");
+  };
 
 
   if (!isDataLoaded) {
@@ -738,6 +779,28 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
                   style={{ width: '50px', textAlign: 'center' }}
                 />
                 <button onClick={() => handleRemoveCarrier(c.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>Remove</button>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+    <button 
+      type="button" 
+      onClick={() => handleUpdateCarrierPin(c.id)}
+    >
+      Change PIN
+    </button>
+    
+    <button 
+      type="button" 
+      onClick={() => handleCancelBid(c.id)}
+    >
+      Cancel Bids
+    </button>
+    
+    <button 
+      type="button" 
+      onClick={() => handleDeleteCarrier(c.id)}
+    >
+      Delete
+    </button>
+  </div>
               </li>
             ))}
           </ul>
