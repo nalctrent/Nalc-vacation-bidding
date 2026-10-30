@@ -426,22 +426,30 @@ export default function App() {
   };
 
   const handlePrintMasterList = () => {
-    let rowsHtml = '';
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Please allow popups for this site to print the master list.");
+      return;
+    }
+
+    let html = `<html><head><title>Master Roster</title><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:20px;font-size:12px;}th,td{padding:8px;border:1px solid #333;}th{background:#003366;color:#fff;}.center{text-align:center;}</style></head><body><h2>NALC Branch 366 Master Roster</h2><table><thead><tr><th>Priority</th><th>Name</th><th>Cat</th><th>Round 1</th><th>Round 2</th><th>PS 3971</th></tr></thead><tbody>`;
     
     sortedCarriers.forEach(c => {
-      const r1 = Array.isArray(c.round1Choice) ? c.round1Choice.join(', ') : (c.round1Choice || '-');
-      const r2 = Array.isArray(c.round2Choice) ? c.round2Choice.join(', ') : (c.round2Choice || '-');
-      const submitted = c.ps3971_submitted ? 'Yes' : 'No';
-
-      rowsHtml += `<tr>
-        <td style="text-align:center; padding: 8px; border: 1px solid #333;">#${c.seniority_order || '-'}</td>
-        <td style="padding: 8px; border: 1px solid #333;"><b>${c.name || 'Unknown'}</b></td>
-        <td style="text-align:center; padding: 8px; border: 1px solid #333;">${c.category || '-'}</td>
-        <td style="padding: 8px; border: 1px solid #333;">${r1}</td>
-        <td style="padding: 8px; border: 1px solid #333;">${r2}</td>
-        <td style="text-align:center; padding: 8px; border: 1px solid #333;">${submitted}</td>
+      html += `<tr>
+        <td class="center">#${c.seniority_order || '-'}</td>
+        <td><b>${c.name || 'Unknown'}</b></td>
+        <td class="center">${c.category || '-'}</td>
+        <td>${typeof formatWeeksWithDates === 'function' ? formatWeeksWithDates(c.round1Choice) : (c.round1Choice || '-')}</td>
+        <td>${typeof formatWeeksWithDates === 'function' ? formatWeeksWithDates(c.round2Choice) : (c.round2Choice || '-')}</td>
+        <td class="center">${c.ps3971_submitted ? 'Yes' : 'No'}</td>
       </tr>`;
     });
+
+    html += `</tbody></table></body></html>`;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 500);
+  };
 
     const fullHtml = `
       <!DOCTYPE html>
