@@ -22,23 +22,20 @@ const calculateBiddingDeadline = (startDate = new Date()) => {
 
 const generateYearWeeks = () => {
   const weeks = [];
-  // Target next year (2027) for vacation bidding
-  const biddingYear = new Date().getFullYear() + 1; 
+  const biddingYear = 2027; // Explicitly target 2027
   
-  // Find the first Monday of January for 2027
+  // Find the exact first Monday of January 2027
   let startDate = new Date(biddingYear, 0, 1, 12, 0, 0);
   while (startDate.getDay() !== 1) {
     startDate.setDate(startDate.getDate() + 1);
   }
-
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   for (let i = 0; i < 52; i++) {
     const start = new Date(startDate);
     start.setDate(startDate.getDate() + (i * 7));
     
     const end = new Date(start);
-    end.setDate(start.getDate() + 6); // Monday + 6 days = Sunday
+    end.setDate(start.getDate() + 6); // Monday to Sunday
 
     const startStr = `${String(start.getMonth() + 1).padStart(2, '0')}/${String(start.getDate()).padStart(2, '0')}`;
     const endStr = `${String(end.getMonth() + 1).padStart(2, '0')}/${String(end.getDate()).padStart(2, '0')}`;
@@ -58,6 +55,7 @@ const generateYearWeeks = () => {
 
   return weeks;
 };
+
 
 const CALENDAR_WEEKS = generateYearWeeks();
 
