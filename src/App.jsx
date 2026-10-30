@@ -454,7 +454,7 @@ export default function App() {
     printWindow.document.write(html);
     printWindow.document.close();
     setTimeout(() => printWindow.print(), 500);
-  };
+  
 
 
   if (!isDataLoaded) {
