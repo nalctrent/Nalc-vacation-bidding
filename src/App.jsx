@@ -20,6 +20,7 @@ const calculateBiddingDeadline = (startDate = new Date()) => {
   return deadline;
 };
 
+
 const generateYearWeeks = () => {
   const weeks = [];
   const biddingYear = 2027; // Explicitly target 2027
