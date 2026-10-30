@@ -453,11 +453,12 @@ export default function App() {
     html += `</tbody></table></body></html>`;
     printWindow.document.write(html);
     printWindow.document.close();
-    setTimeout(() => printWindow.print(), 500);
-  
-
+     
+        setTimeout(() => printWindow.print(), 500);
+  };
 
   if (!isDataLoaded) {
+
     return <div style={{ textAlign: 'center', padding: '50px', fontFamily: 'Arial' }}><h2>Loading NALC Branch 366 Portal...</h2></div>;
   }
 
