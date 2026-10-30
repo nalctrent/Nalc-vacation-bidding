@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+80,000import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 import { supabase } from './supabaseClient';
@@ -426,12 +426,84 @@ export default function App() {
   };
 
 
-  const handlePrintMasterList = () => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert("Popup blocker prevented the print window from opening. Please allow popups for this site.");
-      return;
-    }
+    const handlePrintMasterList = () => {
+    let rowsHtml = '';
+    sortedCarriers.forEach(c => {
+      const r1 = c.round1Choice || c.round1_choice || [];
+      const r2 = c.round2Choice || c.round2_choice || [];
+      const submitted = c.ps3971_submitted || c.ps3971Submitted || false;
+
+      rowsHtml += `<tr>
+        <td style="text-align:center;">#${c.seniority_order || '-'}</td>
+        <td><b>${c.name || 'Unknown'}</b></td>
+        <td style="text-align:center;">${c.category || '-'}</td>
+        <td>${formatWeeksWithDates(r1)}</td>
+        <td>${formatWeeksWithDates(r2)}</td>
+        <td style="text-align:center;">${submitted ? 'Yes' : 'No'}</td>
+      </tr>`;
+    });
+
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Master Roster</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 15px; color: #000; }
+            h2 { margin-bottom: 10px; text-align: center; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+            th, td { padding: 8px; border: 1px solid #333; }
+            th { background: #003366; color: #fff; }
+          </style>
+        </head>
+        <body>
+          <h2>NALC Branch 366 Master Roster</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Priority</th>
+                <th>Name</th>
+                <th>Cat</th>
+                <th>Round 1</th>
+                <th>Round 2</th>
+                <th>PS 3971</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    // Remove old iframe if present
+    const oldFrame = document.getElementById('print-master-frame');
+    if (oldFrame) oldFrame.remove();
+
+    // Create a hidden iframe on the current page
+    const iframe = document.createElement('iframe');
+    iframe.id = 'print-master-frame';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(fullHtml);
+    doc.close();
+
+    // Wait for content to render before opening print sheet
+    setTimeout(() => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    }, 250);
+  };
 
     let html = `<html><head><title>Master Roster</title><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:20px;font-size:12px;}th,td{padding:8px;border:1px solid #333;}th{background:#003366;color:#fff;}.center{text-align:center;}</style></head><body><h2>NALC Branch 366 Master Roster</h2><table><thead><tr><th>Priority</th><th>Name</th><th>Cat</th><th>Round 1</th><th>Round 2</th><th>PS 3971</th></tr></thead><tbody>`;
     
