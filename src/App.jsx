@@ -432,58 +432,6 @@ export default function App() {
       return;
     }
 
-    let html = `<html><head><title>Master Roster</title><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;margin-top:20px;font-size:12px;}th,td{padding:8px;border:1px solid #333;}th{background:#003366;color:#fff;}.center{text-align:center;}</style></head><body><h2>NALC Branch 366 Master Roster</h2><table><thead><tr><th>Priority</th><th>Name</th><th>Cat</th><th>Round 1</th><th>Round 2</th><th>PS 3971</th></tr></thead><tbody>`;
-    
-    sortedCarriers.forEach(c => {
-      html += `<tr>
-        <td class="center">#${c.seniority_order || '-'}</td>
-        <td><b>${c.name || 'Unknown'}</b></td>
-        <td class="center">${c.category || '-'}</td>
-        <td>${typeof formatWeeksWithDates === 'function' ? formatWeeksWithDates(c.round1Choice) : (c.round1Choice || '-')}</td>
-        <td>${typeof formatWeeksWithDates === 'function' ? formatWeeksWithDates(c.round2Choice) : (c.round2Choice || '-')}</td>
-        <td class="center">${c.ps3971_submitted ? 'Yes' : 'No'}</td>
-      </tr>`;
-    });
-
-    html += `</tbody></table></body></html>`;
-    printWindow.document.write(html);
-    printWindow.document.close();
-    setTimeout(() => printWindow.print(), 500);
-  };
-
-  
-    const fullHtml = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Master Roster</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; color: #000; }
-            h2 { text-align: center; color: #003366; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
-            th { background: #003366; color: #fff; padding: 10px; border: 1px solid #333; }
-          </style>
-        </head>
-        <body>
-          <h2>NALC Branch 366 Master Roster</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Priority</th>
-                <th>Name</th>
-                <th>Cat</th>
-                <th>Round 1</th>
-                <th>Round 2</th>
-                <th>PS 3971</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `;
 
     const oldFrame = document.getElementById('print-master-frame');
     if (oldFrame) oldFrame.remove();
