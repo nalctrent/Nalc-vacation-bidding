@@ -339,7 +339,7 @@ export default function App() {
     setSelectedWeeks([...selectedWeeks, weekNum].sort((a, b) => a - b));
   };
 
-  // CLEAN, CORRECT SUPABASE WRITE MATCHING SCHEMA CAMELCASE COLUMNS
+  // RESTORED SUBMISSION WITH RESEND EMAIL NOTIFICATIONS & CLEAN SUPABASE WRITES
   const handleSubmitBid = async () => {
     if (selectedWeeks.length === 0 || !currentCarrier) return;
 
@@ -364,6 +364,7 @@ export default function App() {
       return;
     }
 
+    // Restored Resend Email Notification integration
     try {
       await fetch('https://api.resend.com/emails', {
         method: 'POST',
