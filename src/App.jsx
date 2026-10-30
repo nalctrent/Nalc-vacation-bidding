@@ -516,7 +516,7 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
     window.location.reload();
   };
 
-      const handlePrintMasterList = () => {
+        const handlePrintMasterList = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       alert("Please allow popups for this site to print the master list.");
@@ -524,13 +524,12 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
     }
 
     try {
-      const weeks = generateYearWeeks();
+      const baseDate = new Date(2027, 0, 4); // First Monday of 2027 (Jan 4)
 
       const getDatesForWeeks = (val) => {
         if (!val) return '-';
         let nums = [];
 
-        // Handle arrays, strings, numbers, or objects
         if (Array.isArray(val)) {
           nums = val.map(item => (typeof item === 'object' && item !== null) ? (item.weekNum || item.week || item.id) : item);
         } else if (typeof val === 'string') {
@@ -542,17 +541,29 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
         }
 
         return nums.map(weekNum => {
-          const foundWeek = weeks.find(w => w.weekNum === Number(weekNum));
-          return foundWeek ? foundWeek.dateString : null;
+          const num = Number(weekNum);
+          if (isNaN(num)) return null;
+
+          const startDate = new Date(baseDate);
+          startDate.setDate(baseDate.getDate() + (num - 1) * 7);
+
+          const endDate = new Date(startDate);
+          endDate.setDate(startDate.getDate() + 6);
+
+          const format = (d) => {
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${m}/${day}`;
+          };
+
+          return `${format(startDate)} - ${format(endDate)}`;
         }).filter(Boolean).join(', ') || '-';
       };
 
       const rosterRows = carriers.map((c, index) => {
         const category = c.cat || c.category || '-';
-        
-        // Check all possible variations of round property names in the database
-        const round1Data = c.round1 || c.round_1 || c.r1 || c.round1Weeks || (c.rounds && c.rounds[0]) || '-';
-        const round2Data = c.round2 || c.round_2 || c.r2 || c.round2Weeks || (c.rounds && c.rounds[1]) || '-';
+        const round1Data = c.round1Choice || c.round1_choice || c.round1 || c.round_1 || (c.rounds && c.rounds[0]) || '-';
+        const round2Data = c.round2Choice || c.round2_choice || c.round2 || c.round_2 || (c.rounds && c.rounds[1]) || '-';
 
         return `
           <tr>
