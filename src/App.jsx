@@ -21,7 +21,6 @@ const calculateBiddingDeadline = (startDate = new Date()) => {
 };
 
 const generateYearWeeks = () => {
-const generateYearWeeks = () => {
   const weeks = [];
   const currentYear = new Date().getFullYear();
   
