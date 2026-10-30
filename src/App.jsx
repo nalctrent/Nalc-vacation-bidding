@@ -516,111 +516,78 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
     window.location.reload();
   };
 
-        const handlePrintMasterList = () => {
+          const handlePrintMasterList = () => {
     const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert("Please allow popups for this site to print the master list.");
-      return;
-    }
+    if (!printWindow) return alert("Please allow popups.");
 
-    try {
-      const baseDate = new Date(2027, 0, 4); // First Monday of 2027 (Jan 4)
+    const baseDate = new Date(2027, 0, 4); // First Monday of 2027
 
-      const getDatesForWeeks = (val) => {
-        if (!val) return '-';
-        let nums = [];
+    const formatWeeks = (val) => {
+      if (!val) return '-';
+      const arr = Array.isArray(val) ? val : String(val).split(',').filter(Boolean);
+      if (!arr.length) return '-';
 
-        if (Array.isArray(val)) {
-          nums = val.map(item => (typeof item === 'object' && item !== null) ? (item.weekNum || item.week || item.id) : item);
-        } else if (typeof val === 'string') {
-          nums = val.split(',').map(s => parseInt(s.trim())).filter(Boolean);
-        } else if (typeof val === 'number') {
-          nums = [val];
-        } else if (typeof val === 'object' && val !== null) {
-          nums = Object.values(val).map(item => (typeof item === 'object' && item !== null) ? (item.weekNum || item.week) : item).filter(Boolean);
-        }
+      return arr.map(w => {
+        const num = Number(w);
+        if (isNaN(num)) return null;
+        
+        const start = new Date(baseDate);
+        start.setDate(baseDate.getDate() + (num - 1) * 7);
+        const end = new Date(start);
+        end.setDate(start.getDate() + 6);
 
-        return nums.map(weekNum => {
-          const num = Number(weekNum);
-          if (isNaN(num)) return null;
+        const fmt = d => `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+        return `${fmt(start)} - ${fmt(end)}`;
+      }).filter(Boolean).join(', ') || '-';
+    };
 
-          const startDate = new Date(baseDate);
-          startDate.setDate(baseDate.getDate() + (num - 1) * 7);
+    const rows = carriers.map((c, i) => `
+      <tr>
+        <td>#${i + 1}</td>
+        <td>${c.name || 'Unknown'}</td>
+        <td>${c.cat || c.category || '-'}</td>
+        <td>${formatWeeks(c.round1Choice || c.round1)}</td>
+        <td>${formatWeeks(c.round2Choice || c.round2)}</td>
+        <td><input type="checkbox" style="width: 16px; height: 16px;" /></td>
+      </tr>
+    `).join('');
 
-          const endDate = new Date(startDate);
-          endDate.setDate(startDate.getDate() + 6);
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>NALC Branch 366 Master Roster</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h2 { text-align: center; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #000; padding: 8px; text-align: center; font-size: 12px; }
+            th { background-color: #f2f2f2; }
+          </style>
+        </head>
+        <body>
+          <h2>NALC Branch 366 Master Roster</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Priority</th>
+                <th>Name</th>
+                <th>Cat</th>
+                <th>Round 1</th>
+                <th>Round 2</th>
+                <th>PS 3971</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </body>
+      </html>
+    `);
 
-          const format = (d) => {
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            return `${m}/${day}`;
-          };
-
-          return `${format(startDate)} - ${format(endDate)}`;
-        }).filter(Boolean).join(', ') || '-';
-      };
-
-      const rosterRows = carriers.map((c, index) => {
-        const category = c.cat || c.category || '-';
-        const round1Data = c.round1Choice || c.round1_choice || c.round1 || c.round_1 || (c.rounds && c.rounds[0]) || '-';
-        const round2Data = c.round2Choice || c.round2_choice || c.round2 || c.round_2 || (c.rounds && c.rounds[1]) || '-';
-
-        return `
-          <tr>
-            <td>#${index + 1}</td>
-            <td>${c.name || 'Unknown'}</td>
-            <td>${category}</td>
-            <td>${getDatesForWeeks(round1Data)}</td>
-            <td>${getDatesForWeeks(round2Data)}</td>
-            <td>[ ]</td>
-          </tr>
-        `;
-      }).join('');
-
-      let html = `
-        <html>
-          <head>
-            <title>NALC Branch 366 Master Roster</title>
-            <style>
-              body { font-family: Arial, sans-serif; padding: 20px; }
-              h2 { text-align: center; }
-              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-              th, td { border: 1px solid #000; padding: 8px; text-align: center; font-size: 12px; }
-              th { background-color: #f2f2f2; }
-            </style>
-          </head>
-          <body>
-            <h2>NALC Branch 366 Master Roster</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Priority</th>
-                  <th>Name</th>
-                  <th>Cat</th>
-                  <th>Round 1</th>
-                  <th>Round 2</th>
-                  <th>PS 3971</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rosterRows}
-              </tbody>
-            </table>
-          </body>
-        </html>
-      `;
-
-      printWindow.document.open();
-      printWindow.document.write(html);
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => printWindow.print(), 500);
-
-    } catch (err) {
-      console.error("Print error:", err);
-      alert("An error occurred while generating the print list.");
-    }
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => printWindow.print(), 500);
   };
+
 
   if (!isDataLoaded) {
 
