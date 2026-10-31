@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     // Send email and text notifications simultaneously
     const emailPromise = resend.emails.send({
       from: 'NALC Branch 366 <onboarding@resend.dev>',
-      to: ['nalctrent@gmail.com'],
+      to: ['nalctrent@gmail.com', 'Jessica.branch366@gmail.com'],
       subject: `🚨 [BID SUBMITTED] ${carrierName} completed ${round}`,
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
