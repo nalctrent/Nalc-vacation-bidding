@@ -80,7 +80,16 @@ function App() {
   const [loginPinInput, setLoginPinInput] = useState('');
 
   // Steward / Admin Settings state
-  const [totalEmployees, setTotalEmployees] = useState(30);
+    const [totalEmployees, setTotalEmployees] = useState(() => {
+    const saved = localStorage.getItem('nalc_total_employees');
+    return saved ? Number(saved) : 30;
+  });
+
+  const handleTotalEmployeesChange = (val) => {
+    const num = Number(val);
+    setTotalEmployees(num);
+    localStorage.setItem('nalc_total_employees', num);
+  };
   const [customSlots, setCustomSlots] = useState(() => {
     const saved = localStorage.getItem('nalc_custom_slots');
     return saved ? JSON.parse(saved) : {};
