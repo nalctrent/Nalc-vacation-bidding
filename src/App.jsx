@@ -463,19 +463,12 @@ const getSlotsForWeek = (weekObj) => {
   const handleSubmitBid = async () => {
     if (selectedWeeks.length === 0 || !currentCarrier) return;
 
-    // --- TURN GUARD CLAUSE ON SUBMIT ---
-    const hasCompletedR1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
-    const activeRound = hasCompletedR1 ? 2 : 1;
+            // --- TURN GUARD CLAUSE ON SUBMIT ---
+    const isAuthorizedTurn = activeBiddingBatch.some(c => String(c.id) === String(currentCarrier.id));
+    const isLateBypassedBidder = activeBiddingBatch.length > 0 && currentCarrier.seniority_order < activeBiddingBatch[0].seniority_order;
 
-    const currentActive = activeRound === 1
-      ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
-      : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
-
-    const isCurrentTurn = currentActive && String(currentActive.id) === String(currentCarrier.id);
-    const isLateBypassedBidder = currentActive && (currentCarrier.seniority_order < currentActive.seniority_order);
-
-    if (!isCurrentTurn && !isLateBypassedBidder && !isStewardUnlocked) {
-      alert("Error: You cannot submit selections out of turn.");
+    if (!isAuthorizedTurn && !isLateBypassedBidder && !isStewardUnlocked) {
+      alert("Error: You cannot submit selections outside of your active bidding batch window.");
       return;
     }
     // -----------------------------------
