@@ -192,6 +192,27 @@ export default function App() {
       return;
     }
 
+    // --- TURN & 48-HOUR GUARD CLAUSE ---
+    if (!isStewardUnlocked) {
+      const sorted = [...latestCarriers].sort((a, b) => (a.seniority_order || 999) - (b.seniority_order || 999));
+      const activeCurrRound = sorted.every(c => c.round1Choice && c.round1Choice.length > 0) ? 2 : 1;
+      
+      const currentActive = activeCurrRound === 1
+        ? sorted.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
+        : sorted.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
+
+      const isCurrentTurn = currentActive && String(currentActive.id) === String(found.id);
+      
+      // Allow if they are higher seniority than the current active turn and haven't finished yet (bypassed / late bidder)
+      const isLateBypassedBidder = currentActive && (found.seniority_order < currentActive.seniority_order) && !hasFinishedRound;
+
+      if (!isCurrentTurn && !isLateBypassedBidder) {
+        alert(`Access Restricted: It is not currently your turn to bid. Please wait until your turn is active or you have been notified.`);
+        return;
+      }
+    }
+    // ------------------------------------
+
     localStorage.setItem('nalc_logged_in_carrier', found.id);
     setCurrentCarrier(found);
     setSelectedWeeks([]);
