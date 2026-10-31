@@ -268,24 +268,43 @@ const getSlotsForWeek = (weekObj) => {
     setIsStewardView(false);
   };
 
-  const handleSendLinkAndStartTimer = async (carrier) => {
+    const handleSendLinkAndStartTimer = async (carrier) => {
+    const isCurrentlyEligible = activeBiddingBatch.some(c => String(c.id) === String(carrier.id));
+
+    // IF NOT IN ACTIVE BATCH: Offer a heads-up text WITHOUT starting any timer
+    if (!isCurrentlyEligible) {
+      const confirmHeadsUp = window.confirm(
+        `Carrier ${carrier.name} is NOT in the active bidding batch yet.\n\n` +
+        `Do you want to send a heads-up text WITHOUT starting their 48-hour clock?\n\n` +
+        `• Click OK to send an informational text (No timer started).\n` +
+        `• Click Cancel to go back.`
+      );
+
+      if (!confirmHeadsUp) return;
+
+      const cleanOrigin = window.location.origin;
+      const userPin = carrier.pin || (carrier.phone ? carrier.phone.slice(-4) : '1234');
+      const msg = encodeURIComponent(`Hi ${carrier.name}, quick update from NALC Branch 366: Bidding is progressing. Your turn is coming up soon! You can log in at ${cleanOrigin} with PIN ${userPin} to preview open weeks.`);
+      
+      window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
+      return;
+    }
+
+    // IF IN ACTIVE BATCH: Send official turn text AND start the 48-hour clock
     const now = new Date();
     const deadline = calculateBiddingDeadline(now);
 
-    const updated = carriers.map(c => c.id === carrier.id ? {
-      ...c,
+    const updatePayload = {
       link_sent_at: now.toISOString(),
       deadline_at: deadline.toISOString(),
       status: 'active'
-    } : c);
+    };
 
+    const updated = carriers.map(c => c.id === carrier.id ? { ...c, ...updatePayload } : c);
     saveCarriersState(updated);
+
     try {
-      await supabase.from('carriers').update({
-        link_sent_at: now.toISOString(),
-        deadline_at: deadline.toISOString(),
-        status: 'active'
-      }).eq('id', carrier.id);
+      await supabase.from('carriers').update(updatePayload).eq('id', carrier.id);
     } catch (err) {}
 
     const cleanOrigin = window.location.origin;
@@ -293,10 +312,11 @@ const getSlotsForWeek = (weekObj) => {
     const portalLink = `${cleanOrigin}`;
 
     const deadlineFormatted = deadline.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-    const msg = encodeURIComponent(`Hi ${carrier.name}, it is your turn to bid for Round ${currentRound}! Go to ${portalLink}, select your name, and use PIN: ${userPin}. You have until ${deadlineFormatted} to submit your picks.`);
+    const msg = encodeURIComponent(`Hi ${carrier.name}, it is NOW your turn to bid for Round ${currentRound}! Go to ${portalLink}, select your name, and use PIN: ${userPin}. Your 48-hour deadline is ${deadlineFormatted}.`);
     
     window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
   };
+
 
           const handleAddCarrier = async (e) => {
     e.preventDefault();
