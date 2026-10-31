@@ -126,13 +126,6 @@ function App() {
     setCustomPrimeWeeks(updated);
     localStorage.setItem('nalc_custom_prime', JSON.stringify(updated));
   };
-
-  const togglePrimeOverride = (weekNum, defaultPrime) => {
-    const currentPrime = isWeekPrimeTime(weekNum, defaultPrime);
-    const updated = { ...customPrimeWeeks, [weekNum]: !currentPrime };
-    setCustomPrimeWeeks(updated);
-    localStorage.setItem('nalc_custom_prime', JSON.stringify(updated));
-  };
   
   const [newCarrierName, setNewCarrierName] = useState('');
   const [newCarrierCategory, setNewCarrierCategory] = useState(1);
