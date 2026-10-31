@@ -849,6 +849,36 @@ const getSlotsForWeek = (weekObj) => {
               style={{ padding: '4px 8px', width: '60px', borderRadius: '4px', border: '1px solid #ccc' }}
             />
           </div>
+          <div style={{ marginBottom: '16px', display: 'flex', gap: '15px', alignItems: 'center', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #ccc', flexWrap: 'wrap' }}>
+            
+            <label style={{ fontSize: '13px', fontWeight: 'bold' }}>☀️ Active Seasonal Prime Time Range (14% Quota):</label>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
+              <span>Start:</span>
+              <select 
+                value={primeStartWeek} 
+                onChange={(e) => handlePrimeStartChange(e.target.value)}
+                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '12px' }}
+              >
+                {CALENDAR_WEEKS.map(w => (
+                  <option key={w.weekNum} value={w.weekNum}>Wk {w.weekNum} ({w.dateString})</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
+              <span>End:</span>
+              <select 
+                value={primeEndWeek} 
+                onChange={(e) => handlePrimeEndChange(e.target.value)}
+                style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '12px' }}
+              >
+                {CALENDAR_WEEKS.map(w => (
+                  <option key={w.weekNum} value={w.weekNum}>Wk {w.weekNum} ({w.dateString})</option>
+                ))}
+              </select>
+            </div>
+          </div>
 
           <h4 style={{ margin: '15px 0 8px 0' }}>Manual Weekly Leave Slot Overrides</h4>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', maxHeight: '220px', overflowY: 'auto', background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #ccc', marginBottom: '20px' }}>
