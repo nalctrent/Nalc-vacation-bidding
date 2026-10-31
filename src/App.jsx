@@ -286,7 +286,7 @@ export default function App() {
     window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
   };
 
-      const handleAddCarrier = async (e) => {
+        const handleAddCarrier = async (e) => {
     e.preventDefault();
     if (!newCarrierName.trim()) return;
 
@@ -326,8 +326,9 @@ export default function App() {
       }
     }
 
-    // 3. Build the new carrier object
+    // 3. Build the new carrier object with an explicit unique ID
     const newCarrier = {
+      id: Date.now().toString(), // <-- This satisfies the Supabase not-null constraint
       name: newCarrierName.trim(),
       category: Number(newCarrierCategory) || 1,
       phone: newCarrierPhone.trim(),
@@ -374,6 +375,7 @@ export default function App() {
       alert("Error adding carrier: " + err.message);
     }
   };
+
 
   const handleUpdateRank = async (id, newRank) => {
     const updated = carriers.map(c => c.id === id ? { ...c, seniority_order: Number(newRank) } : c);
