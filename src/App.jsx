@@ -241,12 +241,13 @@ const [customPrimeWeeks, setCustomPrimeWeeks] = useState(() => {
     setCarriers(newCarriers);
   };
 
-  const getSlotsForWeek = (weekObj) => {
+const getSlotsForWeek = (weekObj) => {
     if (customSlots[weekObj.weekNum] !== undefined && customSlots[weekObj.weekNum] !== '') {
       return Number(customSlots[weekObj.weekNum]);
     }
-    const rate = weekObj.isPrimeTime ? 0.14 : 0.11;
-    return Math.max(1, Math.round(totalEmployees * rate));
+    const isPrime = isWeekPrimeTime(weekObj.weekNum, weekObj.isPrimeTime);
+    const rate = isPrime ? 0.14 : 0.11;
+    return Math.max(1, Math.ceil(totalEmployees * rate)); // Keeps Math.ceil rounding up!
   };
 
   const getBookedCount = (weekNum) => {
