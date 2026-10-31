@@ -68,7 +68,7 @@ const DEFAULT_ROSTER = [
   { id: '3', name: 'John Doe', category: 1, phone: '', pin: '1234', contact: '', round1Choice: [], round2Choice: [], seniority_order: 3, ps3971_submitted: false, link_sent_at: null, deadline_at: null, status: 'pending' }
 ];
 
-export default function App() {
+function App() {
   const [carriers, setCarriers] = useState(DEFAULT_ROSTER);
   const [currentCarrier, setCurrentCarrier] = useState(null);
   const [selectedWeeks, setSelectedWeeks] = useState([]);
