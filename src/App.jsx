@@ -522,7 +522,7 @@ const getSlotsForWeek = (weekObj) => {
       }
     }
     
-    const fieldToUpdate = activeRound === 1 
+    const fieldToUpdate = currentRound === 1 
       ? { round1Choice: selectedWeeks } 
       : { round2Choice: selectedWeeks };
 
@@ -574,7 +574,7 @@ const getSlotsForWeek = (weekObj) => {
     // Determine who is next after this submission
     const nextPerson = sortedCarriers.find(c => 
       String(c.id) !== String(currentCarrier.id) && 
-      (activeRound === 1 ? (!c.round1Choice || c.round1Choice.length === 0) : (!c.round2Choice || c.round2Choice.length === 0))
+      (currentRound === 1 ? (!c.round1Choice || c.round1Choice.length === 0) : (!c.round2Choice || c.round2Choice.length === 0))
     );
 
     // Trigger secure backend notify function
@@ -586,7 +586,7 @@ const getSlotsForWeek = (weekObj) => {
         },
         body: JSON.stringify({
           carrierName: currentCarrier.name,
-          round: `Round ${activeRound}`,
+          round: `Round ${currentRound}`,
           selectedWeeks: selectedWeeks.map(w => `Week ${w}`).join(', '),
           nextCarrier: nextPerson ? `${nextPerson.name} (#${nextPerson.seniority_order})` : 'None (All Complete)'
         })
@@ -599,7 +599,7 @@ const getSlotsForWeek = (weekObj) => {
     setCurrentCarrier(null);
     setSelectedWeeks([]);
     
-    alert(`Round ${activeRound} selections successfully submitted for ${currentCarrier.name}!`);
+    alert(`Round ${currentRound} selections successfully submitted for ${currentCarrier.name}!`);
     window.location.reload();
   };
 
