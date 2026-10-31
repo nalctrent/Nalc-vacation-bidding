@@ -314,7 +314,7 @@ const getSlotsForWeek = (weekObj) => {
 
       if (!confirmHeadsUp) return;
 
-      const cleanOrigin = window.location.origin;
+      const cleanOrigin = 'https://nalc-vacation-bidding.vercel.app';
       const userPin = carrier.pin || (carrier.phone ? carrier.phone.slice(-4) : '1234');
       const msg = encodeURIComponent(`Hi ${carrier.name}, quick update from NALC Branch 366: Bidding is progressing. Your turn is coming up soon! You can log in at ${cleanOrigin} with PIN ${userPin} to preview open weeks.`);
       
@@ -339,7 +339,7 @@ const getSlotsForWeek = (weekObj) => {
       await supabase.from('carriers').update(updatePayload).eq('id', carrier.id);
     } catch (err) {}
 
-    const cleanOrigin = window.location.origin;
+    const cleanOrigin = 'https://nalc-vacation-bidding.vercel.app';
     const userPin = carrier.pin || (carrier.phone ? carrier.phone.slice(-4) : '1234');
     const portalLink = `${cleanOrigin}`;
 
