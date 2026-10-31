@@ -85,16 +85,46 @@ function App() {
     const saved = localStorage.getItem('nalc_custom_slots');
     return saved ? JSON.parse(saved) : {};
   });
-const [customPrimeWeeks, setCustomPrimeWeeks] = useState(() => {
+  // Saved Prime Time week range (Default: Weeks 20 to 35)
+  const [primeStartWeek, setPrimeStartWeek] = useState(() => {
+    const saved = localStorage.getItem('nalc_prime_start');
+    return saved ? Number(saved) : 20;
+  });
+
+  const [primeEndWeek, setPrimeEndWeek] = useState(() => {
+    const saved = localStorage.getItem('nalc_prime_end');
+    return saved ? Number(saved) : 35;
+  });
+
+  const [customPrimeWeeks, setCustomPrimeWeeks] = useState(() => {
     const saved = localStorage.getItem('nalc_custom_prime');
     return saved ? JSON.parse(saved) : {};
   });
+
+  const handlePrimeStartChange = (val) => {
+    const num = Number(val);
+    setPrimeStartWeek(num);
+    localStorage.setItem('nalc_prime_start', num);
+  };
+
+  const handlePrimeEndChange = (val) => {
+    const num = Number(val);
+    setPrimeEndWeek(num);
+    localStorage.setItem('nalc_prime_end', num);
+  };
 
   const isWeekPrimeTime = (weekNum, defaultPrime) => {
     if (customPrimeWeeks[weekNum] !== undefined) {
       return customPrimeWeeks[weekNum];
     }
-    return defaultPrime;
+    return weekNum >= primeStartWeek && weekNum <= primeEndWeek;
+  };
+
+  const togglePrimeOverride = (weekNum, defaultPrime) => {
+    const currentPrime = isWeekPrimeTime(weekNum, defaultPrime);
+    const updated = { ...customPrimeWeeks, [weekNum]: !currentPrime };
+    setCustomPrimeWeeks(updated);
+    localStorage.setItem('nalc_custom_prime', JSON.stringify(updated));
   };
 
   const togglePrimeOverride = (weekNum, defaultPrime) => {
