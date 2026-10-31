@@ -707,6 +707,29 @@ const getSlotsForWeek = (weekObj) => {
     alert("Steward access PIN updated successfully.");
   };
 
+  // 1. Get all pending carriers for the active round who haven't selected their leave
+  const pendingCarriers = sortedCarriers.filter(c => 
+    currentRound === 1 
+      ? (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed'
+      : (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed'
+  );
+
+  // 2. Find the minimum remaining slots across all weeks to prevent seniority sniping
+  const minRemainingSlots = CALENDAR_WEEKS.reduce((min, week) => {
+    const maxSlots = getSlotsForWeek({ ...week, isPrimeTime: isWeekPrimeTime(week.weekNum, week.isPrimeTime) });
+    const booked = getBookedCount(week.weekNum);
+    const available = Math.max(0, maxSlots - booked);
+    return Math.min(min, available);
+  }, 999);
+
+  // 3. Dynamic batch size (allows up to minRemainingSlots carriers to bid concurrently, min 1)
+  const concurrentLimit = Math.max(1, minRemainingSlots === 999 ? 5 : minRemainingSlots);
+
+  // 4. The current active window of carriers authorized to bid right now
+  const activeBiddingBatch = pendingCarriers.slice(0, concurrentLimit);
+
+  // 5. Check if the logged-in carrier is within the active bidding window
+  const isCurrentCarrierTurn = currentCarrier && activeBiddingBatch.some(c => c.id === currentCarrier.id);
 
   if (!isDataLoaded) {
 
