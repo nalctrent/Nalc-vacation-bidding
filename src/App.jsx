@@ -845,11 +845,11 @@ const getSlotsForWeek = (weekObj) => {
           <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <label style={{ fontSize: '14px', fontWeight: 'bold' }}>Total Office Carriers (Base 11%/14% Calculator):</label>
             <input 
-              type="number" 
-              value={totalEmployees} 
-              onChange={(e) => setTotalEmployees(Number(e.target.value))}
-              style={{ padding: '4px 8px', width: '60px', borderRadius: '4px', border: '1px solid #ccc' }}
-            />
+  type="number" 
+  value={totalEmployees} 
+  onChange={(e) => handleTotalEmployeesChange(e.target.value)}
+  style={{ padding: '4px 8px', width: '60px', borderRadius: '4px', border: '1px solid #ccc' }}
+/>
           </div>
           <div style={{ marginBottom: '16px', display: 'flex', gap: '15px', alignItems: 'center', background: '#fff', padding: '12px', borderRadius: '6px', border: '1px solid #ccc', flexWrap: 'wrap' }}>
             
