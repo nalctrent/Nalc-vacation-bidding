@@ -805,45 +805,37 @@ export default function App() {
             <button type="submit" style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }}>Add Carrier</button>
           </form>
 
-          <h4 style={{ margin: '15px 0 8px 0' }}>Manage Seniority Roster Order</h4>
-          <ul>
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', marginBottom: '10px' }}>
+            <h4 style={{ margin: 0 }}>Manage Seniority Roster Order</h4>
+            <button 
+              onClick={handleUpdateStewardPin}
+              style={{ background: '#17a2b8', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+            >
+              🔑 Change Officer PIN
+            </button>
+          </div>
+
+          <ul style={{ paddingLeft: '0', listStyle: 'none' }}>
             {sortedCarriers.map((c) => (
-              <li key={c.id} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <strong style={{ minWidth: '120px' }}>{c.name}</strong>
-                <span>Priority Rank:</span>
-                <input 
-                  type="number" 
-                  value={c.seniority_order || 1} 
-                  onChange={(e) => handleUpdateRank(c.id, e.target.value)}
-                  style={{ width: '50px', textAlign: 'center' }}
-                />
-                <button onClick={() => handleRemoveCarrier(c.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>Remove</button>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-    <button 
-      type="button" 
-      onClick={() => handleUpdateCarrierPin(c.id)}
-    >
-      Change PIN
-    </button>
-    
-    <button 
-      type="button" 
-      onClick={() => handleCancelBid(c.id)}
-    >
-      Cancel Bids
-    </button>
-    
-    <button 
-      type="button" 
-      onClick={() => handleDeleteCarrier(c.id)}
-    >
-      Delete
-    </button>
-  </div>
+              <li key={c.id} style={{ marginBottom: '10px', padding: '8px', background: '#fff', borderRadius: '6px', border: '1px solid #ddd', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <strong style={{ minWidth: '120px' }}>{c.name}</strong>
+                  <span>Rank:</span>
+                  <input 
+                    type="number" 
+                    value={c.seniority_order || 1} 
+                    onChange={(e) => handleUpdateRank(c.id, e.target.value)}
+                    style={{ width: '50px', textAlign: 'center', padding: '2px' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button type="button" onClick={() => handleUpdateCarrierPin(c.id)} style={{ padding: '4px 8px', fontSize: '11px', cursor: 'pointer' }}>Change PIN</button>
+                  <button type="button" onClick={() => handleCancelBid(c.id)} style={{ padding: '4px 8px', fontSize: '11px', cursor: 'pointer' }}>Cancel Bids</button>
+                  <button type="button" onClick={() => handleRemoveCarrier(c.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}>Remove & Re-rank</button>
+                </div>
               </li>
             ))}
           </ul>
-        </div>
       )}
 
       {portalMessage && (
