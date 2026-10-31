@@ -85,7 +85,25 @@ function App() {
     const saved = localStorage.getItem('nalc_custom_slots');
     return saved ? JSON.parse(saved) : {};
   });
+const [customPrimeWeeks, setCustomPrimeWeeks] = useState(() => {
+    const saved = localStorage.getItem('nalc_custom_prime');
+    return saved ? JSON.parse(saved) : {};
+  });
 
+  const isWeekPrimeTime = (weekNum, defaultPrime) => {
+    if (customPrimeWeeks[weekNum] !== undefined) {
+      return customPrimeWeeks[weekNum];
+    }
+    return defaultPrime;
+  };
+
+  const togglePrimeOverride = (weekNum, defaultPrime) => {
+    const currentPrime = isWeekPrimeTime(weekNum, defaultPrime);
+    const updated = { ...customPrimeWeeks, [weekNum]: !currentPrime };
+    setCustomPrimeWeeks(updated);
+    localStorage.setItem('nalc_custom_prime', JSON.stringify(updated));
+  };
+  
   const [newCarrierName, setNewCarrierName] = useState('');
   const [newCarrierCategory, setNewCarrierCategory] = useState(1);
   const [newCarrierPhone, setNewCarrierPhone] = useState('');
