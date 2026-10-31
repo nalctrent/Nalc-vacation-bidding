@@ -932,7 +932,7 @@ export default function App() {
           <button
             onClick={handleSubmitBid}
             disabled={selectedWeeks.length === 0}
-            style={{
+                        style={{
               width: '100%',
               padding: '14px',
               background: selectedWeeks.length === 0 ? '#cccccc' : '#28a745',
@@ -951,3 +951,5 @@ export default function App() {
     </div>
   );
 }
+
+export default App;
