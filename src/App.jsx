@@ -1017,34 +1017,37 @@ const getSlotsForWeek = (weekObj) => {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '8px', marginBottom: '20px' }}>
-            {CALENDAR_WEEKS.map((week) => {
-              const maxSlots = getSlotsForWeek(week);
-              const booked = getBookedCount(week.weekNum);
-              const isFull = booked >= maxSlots;
-              const isSelected = selectedWeeks.includes(week.weekNum);
+                {CALENDAR_WEEKS.map((week) => {
+      const isPrime = isWeekPrimeTime(week.weekNum, week.isPrimeTime);
+      const maxSlots = getSlotsForWeek({ ...week, isPrimeTime: isPrime });
+      const booked = getBookedCount(week.weekNum);
+      const isFull = booked >= maxSlots;
+      const isSelected = selectedWeeks.includes(week.weekNum);
 
-              return (
-                <button
-                  key={week.weekNum}
-                  disabled={isFull && !isSelected}
-                  onClick={() => handleWeekClick(week.weekNum)}
-                  style={{
-                    padding: '10px',
-                    borderRadius: '6px',
-                    border: isSelected ? '2px solid #001f3f' : '1px solid #ccc',
-                    background: isSelected ? '#003366' : isFull ? '#ffe6e6' : week.isPrimeTime ? '#fff8dc' : '#fff',
-                    color: isSelected ? '#fff' : isFull ? '#cc0000' : '#000',
-                    textAlign: 'center',
-                    cursor: (isFull && !isSelected) ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  <div style={{ fontWeight: 'bold', fontSize: '13px' }}>Week {week.weekNum}</div>
-                  <div style={{ fontSize: '11px', color: isSelected ? '#e0e0e0' : '#555' }}>{week.dateString}</div>
-                  <div style={{ fontSize: '10px', fontWeight: 'bold', color: isSelected ? '#ffcc00' : (week.isPrimeTime ? '#b8860b' : '#666') }}>{week.isPrimeTime ? '☀️ Prime' : 'Standard'}</div>
-                  <div style={{ fontSize: '11px', marginTop: '2px' }}>Slots: {booked}/{maxSlots}</div>
-                </button>
-              );
-            })}
+      return (
+        <button
+          key={week.weekNum}
+          disabled={isFull && !isSelected}
+          onClick={() => handleWeekClick(week.weekNum)}
+          style={{
+            padding: '10px',
+            borderRadius: '6px',
+            border: isSelected ? '2px solid #001f3f' : '1px solid #ccc',
+            background: isSelected ? '#003366' : isFull ? '#ffe6e6' : isPrime ? '#fff8dc' : '#fff',
+            color: isSelected ? '#fff' : isFull ? '#cc0000' : '#000',
+            textAlign: 'center',
+            cursor: (isFull && !isSelected) ? 'not-allowed' : 'pointer',
+          }}
+        >
+          <div style={{ fontWeight: 'bold', fontSize: '13px' }}>Week {week.weekNum}</div>
+          <div style={{ fontSize: '11px', color: isSelected ? '#e0e0e0' : '#555' }}>{week.dateString}</div>
+          <div style={{ fontSize: '10px', fontWeight: 'bold', color: isSelected ? '#ffcc00' : (isPrime ? '#b8860b' : '#666') }}>
+            {isPrime ? '☀️ Prime' : 'Standard'}
+          </div>
+          <div style={{ fontSize: '11px', marginTop: '2px' }}>Slots: {booked}/{maxSlots}</div>
+        </button>
+      );
+    })}
           </div>
 
           <button
