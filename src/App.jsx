@@ -442,11 +442,28 @@ export default function App() {
     setSelectedWeeks([...selectedWeeks, weekNum].sort((a, b) => a - b));
   };
 
-    // SUBMIT BID, UPDATE SUPABASE WITH EXACT ROW RETURN, AND TRIGGER BACKEND NOTIFY API
+  // SUBMIT BID, UPDATE SUPABASE WITH EXACT ROW RETURN, AND TRIGGER BACKEND NOTIFY API
   const handleSubmitBid = async () => {
     if (selectedWeeks.length === 0 || !currentCarrier) return;
+
+    // --- TURN GUARD CLAUSE ON SUBMIT ---
+    const hasCompletedR1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
+    const activeRound = hasCompletedR1 ? 2 : 1;
+
+    const currentActive = activeRound === 1
+      ? sortedCarriers.find(c => (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed')
+      : sortedCarriers.find(c => (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed');
+
+    const isCurrentTurn = currentActive && String(currentActive.id) === String(currentCarrier.id);
+    const isLateBypassedBidder = currentActive && (currentCarrier.seniority_order < currentActive.seniority_order);
+
+    if (!isCurrentTurn && !isLateBypassedBidder && !isStewardUnlocked) {
+      alert("Error: You cannot submit selections out of turn.");
+      return;
+    }
+    // -----------------------------------
     
-const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
+    const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
     const r1Array = Array.isArray(rawR1)
       ? rawR1.map(String)
       : String(rawR1).split(',').map(s => s.trim()).filter(Boolean);
@@ -459,13 +476,11 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
       }
     }
     
-    const hasCompletedR1 = currentCarrier.round1Choice && currentCarrier.round1Choice.length > 0;
-    const activeRound = hasCompletedR1 ? 2 : 1;
     const fieldToUpdate = activeRound === 1 
       ? { round1Choice: selectedWeeks } 
       : { round2Choice: selectedWeeks };
 
-        try {
+    try {
       // 1. Try updating with numeric ID
       let { data, error } = await supabase
         .from('carriers')
@@ -510,7 +525,6 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
       return;
     }
 
-
     // Determine who is next after this submission
     const nextPerson = sortedCarriers.find(c => 
       String(c.id) !== String(currentCarrier.id) && 
@@ -542,6 +556,8 @@ const rawR1 = currentCarrier.round1Choice || currentCarrier.round1_choice || [];
     alert(`Round ${activeRound} selections successfully submitted for ${currentCarrier.name}!`);
     window.location.reload();
   };
+
+
 
     const handlePrintMasterList = () => {
     const printWindow = window.open('', '_blank');
