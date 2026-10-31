@@ -793,11 +793,18 @@ const getSlotsForWeek = (weekObj) => {
 
           <h4 style={{ margin: '15px 0 8px 0' }}>Manual Weekly Leave Slot Overrides</h4>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', maxHeight: '220px', overflowY: 'auto', background: '#fff', padding: '10px', borderRadius: '6px', border: '1px solid #ccc', marginBottom: '20px' }}>
-            {CALENDAR_WEEKS.map(w => {
-              const defaultSlots = Math.max(1, Math.round(totalEmployees * (w.isPrimeTime ? 0.14 : 0.11)));
+                        {CALENDAR_WEEKS.map(w => {
+              const isPrime = isWeekPrimeTime(w.weekNum, w.isPrimeTime);
+              const defaultSlots = Math.max(1, Math.ceil(totalEmployees * (isPrime ? 0.14 : 0.11)));
               return (
                 <div key={w.weekNum} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', padding: '4px', borderBottom: '1px solid #eee' }}>
-                  <span>Wk {w.weekNum} ({w.isPrimeTime ? 'Prime' : 'Std'}):</span>
+                  <span 
+                    onClick={() => togglePrimeOverride(w.weekNum, w.isPrimeTime)} 
+                    style={{ cursor: 'pointer', color: isPrime ? '#b8860b' : '#333', fontWeight: 'bold' }} 
+                    title="Click to toggle Prime/Std"
+                  >
+                    Wk {w.weekNum} ({isPrime ? '☀️ Prime' : 'Std'}):
+                  </span>
                   <input
                     type="number"
                     placeholder={defaultSlots}
