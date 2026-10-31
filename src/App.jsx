@@ -833,9 +833,10 @@ export default function App() {
                   <button type="button" onClick={() => handleCancelBid(c.id)} style={{ padding: '4px 8px', fontSize: '11px', cursor: 'pointer' }}>Cancel Bids</button>
                   <button type="button" onClick={() => handleRemoveCarrier(c.id)} style={{ background: '#dc3545', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}>Remove & Re-rank</button>
                 </div>
-              </li>
+                            </li>
             ))}
           </ul>
+        </div>
       )}
 
       {portalMessage && (
