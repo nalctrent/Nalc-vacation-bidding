@@ -286,12 +286,13 @@ export default function App() {
     window.location.href = `sms:${carrier.phone || ''}?body=${msg}`;
   };
 
-        const handleAddCarrier = async (e) => {
+          const handleAddCarrier = async (e) => {
     e.preventDefault();
     if (!newCarrierName.trim()) return;
 
     const targetRank = Number(newCarrierRank);
-    const pinVal = newCarrierPin.trim() || '1234';
+    // FIXED: Use the random PIN generator if no custom PIN was entered
+    const pinVal = newCarrierPin.trim() || generateRandomPin();
 
     if (targetRank) {
       const existingCarrierWithRank = carriers.find(
@@ -307,14 +308,12 @@ export default function App() {
 
         if (!confirmBump) return;
 
-        // 1. Fetch carriers that need to be bumped down
         const { data: carriersToBump, error: fetchErr } = await supabase
           .from('carriers')
           .select('id, seniority_order')
           .gte('seniority_order', targetRank)
           .order('seniority_order', { ascending: false });
 
-        // 2. Wait for ALL bumps to complete before inserting
         if (!fetchErr && carriersToBump && carriersToBump.length > 0) {
           for (const carrier of carriersToBump) {
             await supabase
@@ -326,9 +325,8 @@ export default function App() {
       }
     }
 
-    // 3. Build the new carrier object with an explicit unique ID
     const newCarrier = {
-      id: Date.now().toString(), // <-- This satisfies the Supabase not-null constraint
+      id: Date.now().toString(),
       name: newCarrierName.trim(),
       category: Number(newCarrierCategory) || 1,
       phone: newCarrierPhone.trim(),
@@ -344,7 +342,6 @@ export default function App() {
     };
 
     try {
-      // 4. Insert into Supabase
       const { data, error } = await supabase
         .from('carriers')
         .insert([newCarrier])
@@ -352,7 +349,6 @@ export default function App() {
 
       if (error) throw error;
 
-      // 5. Re-fetch full master list from Supabase to refresh state everywhere
       const { data: refreshedCarriers, error: listErr } = await supabase
         .from('carriers')
         .select('*')
@@ -363,18 +359,18 @@ export default function App() {
         if (typeof saveCarriersState === 'function') saveCarriersState(refreshedCarriers);
       }
 
-      // Reset form fields
       setNewCarrierName('');
       setNewCarrierPin('');
       setNewCarrierPhone('');
       setNewCarrierContact('');
       setNewCarrierRank('');
 
-      alert(`Successfully added ${newCarrier.name}!`);
+      alert(`Successfully added ${newCarrier.name}! (Assigned PIN: ${pinVal})`);
     } catch (err) {
       alert("Error adding carrier: " + err.message);
     }
   };
+
 
 
   const handleUpdateRank = async (id, newRank) => {
