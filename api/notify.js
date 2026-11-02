@@ -10,7 +10,7 @@ export default async function handler(req, res) {
   const { carrierName, round, selectedWeeks, nextCarrier } = req.body;
 
   try {
-    // Send email and text notifications simultaneously
+    // Primary email dispatch to stewards
     const emailPromise = resend.emails.send({
       from: 'NALC Branch 366 <onboarding@resend.dev>',
       to: ['nalctrent@gmail.com', 'Jessica.branch366@gmail.com'],
@@ -28,9 +28,9 @@ export default async function handler(req, res) {
       `,
     });
 
-    // Text notifications to Trenton (T-Mobile) and Jessica (AT&T)
+    // SMS gateway dispatches
     const textMessage = `NALC Alert: ${carrierName} completed ${round} (${selectedWeeks}). Next up: ${nextCarrier}.`;
-    
+
     const textPromises = [
       resend.emails.send({
         from: 'NALC Branch 366 <onboarding@resend.dev>',
@@ -43,12 +43,20 @@ export default async function handler(req, res) {
         to: ['4178259096@txt.att.net'],
         subject: '',
         text: textMessage,
-      })
+      }),
     ];
 
-    await Promise.all([emailPromise, ...textPromises]);
+    // Using allSettled so individual carrier bounces won't break email delivery
+    const results = await Promise.allSettled([emailPromise, ...textPromises]);
 
-    return res.status(200).json({ success: true, message: 'Notifications sent!' });
+    // Log any gateway failures to your console for debugging
+    results.forEach((result, idx) => {
+      if (result.status === 'rejected') {
+        console.error(`Notification target ${idx} failed:`, result.reason);
+      }
+    });
+
+    return res.status(200).json({ success: true, message: 'Notifications processed!' });
   } catch (error) {
     console.error('Notification error:', error);
     return res.status(500).json({ error: error.message });
