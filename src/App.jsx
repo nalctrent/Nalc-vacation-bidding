@@ -745,29 +745,28 @@ const getSlotsForWeek = (weekObj) => {
     alert("Steward access PIN updated successfully.");
   };
 
-  // 1. Get all pending carriers for the active round who haven't selected their leave
+    // 1. Get all pending carriers for the active round who haven't selected their leave
   const pendingCarriers = sortedCarriers.filter(c => 
     currentRound === 1 
       ? (!c.round1Choice || c.round1Choice.length === 0) && c.status !== 'bypassed'
       : (!c.round2Choice || c.round2Choice.length === 0) && c.status !== 'bypassed'
   );
 
-  // 2. Find the minimum remaining slots across all weeks to prevent seniority sniping
-  const minRemainingSlots = CALENDAR_WEEKS.reduce((min, week) => {
+  // 2. Find remaining slots across all weeks, and explicitly IGNORE zeros
+  const availableWeeksSlots = CALENDAR_WEEKS.map(week => {
     const maxSlots = getSlotsForWeek({ ...week, isPrimeTime: isWeekPrimeTime(week.weekNum, week.isPrimeTime) });
     const booked = getBookedCount(week.weekNum);
-    const available = Math.max(0, maxSlots - booked);
-    return Math.min(min, available);
-  }, 999);
+    return Math.max(0, maxSlots - booked);
+  }).filter(slots => slots > 0); // <--- This completely drops fully booked weeks
 
-  // 3. Dynamic batch size (allows up to minRemainingSlots carriers to bid concurrently, min 1)
-  const concurrentLimit = Math.max(1, minRemainingSlots === 999 ? 5 : minRemainingSlots);
+  // 3. Find the lowest slot count among remaining open weeks (default to 1 if all weeks are full)
+  const minRemainingSlots = availableWeeksSlots.length > 0 ? Math.min(...availableWeeksSlots) : 1;
 
-  // 4. The current active window of carriers authorized to bid right now
+  // 4. Dynamic batch size (allows up to minRemainingSlots carriers to bid concurrently, min 1)
+  const concurrentLimit = Math.max(1, minRemainingSlots);
+
+  // 5. The current active window of carriers authorized to bid right now
   const activeBiddingBatch = pendingCarriers.slice(0, concurrentLimit);
-
-  // 5. Check if the logged-in carrier is within the active bidding window
-  const isCurrentCarrierTurn = currentCarrier && activeBiddingBatch.some(c => c.id === currentCarrier.id);
 
   if (!isDataLoaded) {
 
